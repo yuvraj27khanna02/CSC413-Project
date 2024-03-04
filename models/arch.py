@@ -2,6 +2,8 @@ import torch
 import torchsummary
 
 def _get_act_fn(act_fn=str):
+    """ act_fn list: ['relu', 'sig', 'tanh']
+    """
     if act_fn == 'relu':
         return torch.nn.ReLU()
     if act_fn == 'sig':
@@ -9,16 +11,31 @@ def _get_act_fn(act_fn=str):
     if act_fn == 'tanh':
         return torch.nn.Tanh()
 
+def _get_optimiser(optimiser=str):
+    """ optim list: ['adam', 'sgd', 'adamw', 'rmsprop']
+    """
+    if optimiser == 'adam':
+        return torch.optim.Adam()
+    if optimiser == 'sgd':
+        return torch.optim.SGD()
+    if optimiser == 'adamw':
+        return torch.optim.AdamW()
+    if optimiser == 'rmsprop':
+        return torch.optim.RMSprop()
+
     
 class MLP_BC_v1(torch.nn.Module):
     """ Multilayer Perceptron for Binary Classification version 1
+
     """
 
-    def __init__(self, input_size=int, hidden_size=int, num_layers=int,  act_fn=str) -> None:
+    def __init__(self, input_size=int, hidden_size=int, num_layers=int,  act_fn=str, optimiser=str, lr=float) -> None:
         super().__init__()
+        self.lr = lr
         self.fc_1 = torch.nn.Linear(input_size, hidden_size)
         self.fc_n = torch.nn.Linear(hidden_size, 1)
         self.act_fn = _get_act_fn(act_fn)
+        self.optimiser = _get_optimiser(optimiser)(self.parameters(), lr=self.lr)
     
     def forward(self, input):
         x = self.act_fn(self.fc_1(input))
@@ -305,6 +322,13 @@ class ANN_MO_v1_2(torch.nn.Module):
 
         return out
 
+
+if __name__ == "__main__":
+
+    model1 = MLP_BC_v1(input_size=10, hidden_size=20, num_layers=2, act_fn='relu', optimiser='adam')
+
+    print(torchsummary.summary(model1, (10,), device='mps'))
+    print(torchsummary.summary(model1, (10,), device='cpu'))
 
 
 class RNN_MC_v1(torch.nn.Module):

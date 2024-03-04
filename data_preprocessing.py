@@ -1,6 +1,14 @@
 import pandas as pd
 import torch
 
+def get_device() -> torch.device:
+    if torch.backends.mps.is_available():
+        return torch.device('mps')
+    elif torch.cuda.is_available():
+        return torch.device('cuda')
+    else:
+        return torch.device('cpu')
+
 def get_data(file_path=str, continous_columns=list, categorical_columns=list, target_columns=str):
     file_df = pd.read_csv(file_path)
     pre_processed_df = pd.DataFrame({})
@@ -14,7 +22,6 @@ def get_data(file_path=str, continous_columns=list, categorical_columns=list, ta
     for target_variable in target_columns:
         pre_processed_df[target_variable] = file_df[target_variable].astype(float)
     return pre_processed_df
-
 
 
 def process_laptime_v1(laptime=str, VERBOSE=False):
