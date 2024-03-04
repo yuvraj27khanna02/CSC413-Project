@@ -197,14 +197,115 @@ class ANN_MC_v2(torch.nn.Module):
         out = self.softmax_(self.fc_n(x))
         return out
 
-class ANN_MO_v1(torch.nn.Module):
-    """ Artificial Neural Network for Multi Output Regression version 1.
+class ANN_MO_v1_1(torch.nn.Module):
+    """ Artificial Neural Network for Multi Output Regression version 1.1
 
-    In this implementation, 
+    In this implementation, all outputs are predicted by the same network and the loss is calculated for all outputs.
+
+    Args:
+        input_size (int): The size of the input features.
+        hidden_sizes (list): A list of integers representing the hidden dimension of the hidden layers.
+        outputs (list): A list of integers representing the outputs. 1 for regression or binary classification and > 1 for multi-class classification.
+        act_fn (str): The activation function to be used in the hidden layers.
+
+    Attributes:
+        fc_layers (torch.nn.ModuleList): A list of fully connected layers for predicting outputs.
+        fc_n (torch.nn.ModuleList): A list of output layers from the hidden layers.
+        act_fn (function): The activation function used in the hidden layers.
+        softmax_ (torch.nn.Softmax): The softmax function used for outputs with more than one class.
+
     """
 
-    def __init__(self, ) -> None:
+    def __init__(self, input_size=int, hidden_sizes=list, outputs=list, act_fn=str) -> None:
         super().__init__()
+        
+        # hidden layers for predicting outputs
+        self.fc_layers = torch.nn.ModuleList()
+        prev = input_size
+        for size in hidden_sizes:
+            self.fc_layers.append(torch.nn.Linear(prev, size))
+            prev = size
+        
+        # output layers from hidden layers
+        self.fc_n = torch.nn.ModuleList()
+        self.outputs = outputs
+        last_size = hidden_sizes[-1]
+        for output in self.outputs:
+            self.fc_n.append(torch.nn.Linear(last_size, output))
+
+        self.act_fn = _get_act_fn(act_fn)
+        self.softmax_ = torch.nn.Softmax(dim=1)
+    
+    def forward(self, input):
+        x = input
+
+        for layer in self.fc_layers:
+            x = self.act_fn(layer(x))
+
+        out = torch.tensor([])
+        for i, output in enumerate(self.outputs):
+            if output == 1:
+                out = torch.cat((out, self.fc_n[i](x)), dim=1)
+            else:
+                out = torch.cat((out, self.softmax_(self.fc_n[i](x))), dim=1)
+        
+        return out
+
+class ANN_MO_v1_2(torch.nn.Module):
+    """ Artificial Neural Network for Multi Output Regression version 1.2
+
+    This implementation uses separate hidden layers for each output and the loss is calculated for each output.
+
+    Args:
+        input_size (int): The size of the input features.
+        hidden_first (int): The hidden dimension of the first hidden layer.
+        outputs (list): A list of integers representing the outputs. 1 for regression or binary classification and > 1 for multi-class classification.
+        hidden_dims (list): A list of integers representing the hidden dimension for each output layer.
+        act_fn (str): The activation function to be used in the hidden layers.
+
+    Attributes:
+        fc_1 (torch.nn.Linear): The first fully connected layer.
+        fc_outputs (torch.nn.ModuleList): A list of fully connected layers for each output.
+        act_fn (function): The activation function.
+        softmax_ (torch.nn.Softmax): The softmax function.
+
+    """
+
+    def __init__(self, input_size=int, hidden_first=int, outputs=list, hidden_dims=list, act_fn=str,) -> None:
+        super().__init__()
+
+        self.outputs = outputs
+        self.hidden_dims = hidden_dims
+
+        self.fc_1 = torch.nn.Linear(input_size, hidden_first)
+        self.fc_outputs = torch.nn.ModuleList()
+        for i, output in enumerate(self.outputs):
+            fc_layer_output = torch.nn.ModuleList(
+                [torch.nn.Linear(hidden_first, self.hidden_dims[i])],
+                [torch.nn.Linear(self.hidden_dims[i], output)]
+            )
+            self.fc_outputs.append(fc_layer_output)
+        
+        self.act_fn = _get_act_fn(act_fn)
+        self.softmax_ = torch.nn.Softmax(dim=1)
+    
+    def forward(self, input):
+        x = self.act_fn(self.fc_1(input))
+
+        out = torch.tensor([])
+
+        for i, output in enumerate(self.outputs):
+            for layer in self.fc_outputs[i]:
+                x = self.act_fn(layer(x))
+            
+            if output == 1:
+                out = torch.cat((out, layer(x)), dim=1)
+            else:
+                out = torch.cat((out, self.softmax_(layer(x))), dim=1)
+
+        return out
+
+
 
 class RNN_MC_v1(torch.nn.Module):
     """ Recurrent Neural Network for Multiclass Classification version 1
@@ -233,5 +334,4 @@ class RNN_MC_v1(torch.nn.Module):
         output = self.fc_input_to_output(x)
         output = self.softmax_(output)
         return output, hidden
-
 
