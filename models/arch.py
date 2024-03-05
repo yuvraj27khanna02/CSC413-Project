@@ -1,5 +1,8 @@
 import torch
 import torchsummary
+import sys
+import io
+import os
 
 def _get_act_fn(act_fn=str):
     """ act_fn list: ['relu', 'sig', 'tanh']
@@ -11,31 +14,50 @@ def _get_act_fn(act_fn=str):
     if act_fn == 'tanh':
         return torch.nn.Tanh()
 
-def _get_optimiser(optimiser=str):
+def _get_optimiser(optimiser=str, model_params=dict, lr=float):
     """ optim list: ['adam', 'sgd', 'adamw', 'rmsprop']
     """
     if optimiser == 'adam':
-        return torch.optim.Adam()
+        return torch.optim.Adam(model_params, lr=lr)
     if optimiser == 'sgd':
-        return torch.optim.SGD()
+        return torch.optim.SGD(model_params, lr=lr)
     if optimiser == 'adamw':
-        return torch.optim.AdamW()
+        return torch.optim.AdamW(model_params, lr=lr)
     if optimiser == 'rmsprop':
-        return torch.optim.RMSprop()
+        return torch.optim.RMSprop(model_params, lr=lr)
 
-    
+def get_model_summary(model):
+    old_stdout = sys.stdout
+    sys.stdout = io.StringIO()
+    torchsummary.summary(model, (model.input_size,))
+    a = sys.stdout.getvalue()
+    sys.stdout = old_stdout
+    return a
+
+def write_to_file(file_name, content):
+    if os.path.isfile(file_name):
+        with open(file_name, 'a') as f:
+            f.write(content)
+            f.close()
+    else:
+        with open(file_name, 'w') as f:
+            f.write(content)
+            f.close()
+
+
 class MLP_BC_v1(torch.nn.Module):
     """ Multilayer Perceptron for Binary Classification version 1
 
     """
 
-    def __init__(self, input_size=int, hidden_size=int, num_layers=int,  act_fn=str, optimiser=str, lr=float) -> None:
+    def __init__(self, input_size=int, hidden_size=int,  act_fn=str, optimiser=str, lr=float) -> None:
         super().__init__()
+        self.input_size = input_size
         self.lr = lr
         self.fc_1 = torch.nn.Linear(input_size, hidden_size)
         self.fc_n = torch.nn.Linear(hidden_size, 1)
         self.act_fn = _get_act_fn(act_fn)
-        self.optimiser = _get_optimiser(optimiser)(self.parameters(), lr=self.lr)
+        self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
     
     def forward(self, input):
         x = self.act_fn(self.fc_1(input))
@@ -46,11 +68,13 @@ class MLP_regression_v1(torch.nn.Module):
     """ MultiLayer Perceptron for Regression version 1
     """
 
-    def __init__(self, input_size=int, hidden_size=int, num_layers=int, act_fn=str) -> None:
+    def __init__(self, input_size=int, hidden_size=int, act_fn=str, optimiser=str, lr=float) -> None:
         super().__init__()
+        self.input_size = input_size
         self.fc_1 = torch.nn.Linear(input_size, hidden_size)
         self.fc_n = torch.nn.Linear(hidden_size, 1)
         self.act_fn = _get_act_fn(act_fn)
+        self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
     
     def forward(self, input):
         x = self.act_fn(self.fc_1(input))
@@ -61,12 +85,14 @@ class MLP_MC_v1(torch.nn.Module):
     """ Multilayer Perceptron for Multiclass Classification version 1
     """
 
-    def __init__(self, input_size=int, hidden_size=int, output_classes=int, num_layers=int,  act_fn=str) -> None:
+    def __init__(self, input_size=int, hidden_size=int, output_classes=int, act_fn=str, optimiser=str, lr=float) -> None:
         super().__init__()
+        self.input_size = input_size
         self.fc_1 = torch.nn.Linear(input_size, hidden_size)
         self.fc_n = torch.nn.Linear(hidden_size, output_classes)
         self.act_fn = _get_act_fn(act_fn)
         self.softmax_ = torch.nn.Softmax(dim=1)
+        self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
     
     def forward(self, input):
         x = self.act_fn(self.fc_1(input))
@@ -88,11 +114,14 @@ class ANN_regression_v1(torch.nn.Module):
         act_fn (str): The activation function to be used.
     """
 
-    def __init__(self, input_num=int, hidden_size=int, act_fn=str) -> None:
+    def __init__(self, input_num=int, num_layers=int, hidden_size=int, act_fn=str, optimiser=str, lr=float) -> None:
         super().__init__()
+        self.input_size = input_num
         self.fc_1 = torch.nn.Linear(input_num, hidden_size)
+        self.fc_layers = torch.nn.ModuleList([torch.nn.Linear(hidden_size, hidden_size) for _ in range(num_layers)])
         self.fc_n = torch.nn.Linear(hidden_size, 1)
         self.act_fn = _get_act_fn(act_fn)
+        self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
     
     def forward(self, input):
         """Forward pass of the neural network.
@@ -104,6 +133,8 @@ class ANN_regression_v1(torch.nn.Module):
             torch.Tensor: The output tensor.
         """
         x = self.act_fn(self.fc_1(input))
+        for fc_layer in self.fc_layers:
+            x = self.act_fn(fc_layer(x))
         out = self.fc_n(x)
         return out
 
@@ -116,15 +147,17 @@ class ANN_regression_v2(torch.nn.Module):
             act_fn (str): The activation function to use in the hidden layers.
     """
 
-    def __init__(self, input_size=int, hidden_sizes=list, act_fn=str) -> None:
+    def __init__(self, input_size=int, hidden_sizes=list, act_fn=str, optimiser=str, lr=float) -> None:
         super().__init__()
-        self.act_fn = _get_act_fn(act_fn)
+        self.input_size = input_size
         self.fc_layers = torch.nn.ModuleList()
         prev_size = input_size
         for size in hidden_sizes:
             self.fc_layers.append(torch.nn.Linear(prev_size, size))
             prev_size = size
         self.fc_n = torch.nn.Linear(prev_size, 1)
+        self.act_fn = _get_act_fn(act_fn)
+        self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
     
     def forward(self, input):
         """
@@ -155,12 +188,14 @@ class ANN_MC_v1(torch.nn.Module):
 
     """
 
-    def __init__(self, input_size=int, hidden_size=int, act_fn=str, output_classes=int) -> None:
+    def __init__(self, input_size=int, hidden_size=int, act_fn=str, output_classes=int, optimiser=str, lr=float) -> None:
         super().__init__()
         self.fc_1 = torch.nn.Linear(input_size, hidden_size)
         self.fc_n = torch.nn.Linear(hidden_size, output_classes)
         self.act_fn = _get_act_fn(act_fn)
         self.softmax_ = torch.nn.Softmax(dim=1)
+        self.input_sze = input_size
+        self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
     
     def forward(self, input):
         """
@@ -194,7 +229,7 @@ class ANN_MC_v2(torch.nn.Module):
         fc_n (torch.nn.Linear): The final fully connected layer.
     """
 
-    def __init__(self, input_size, hidden_sizes=list, act_fn=str, output_classes=int) -> None:
+    def __init__(self, input_size, hidden_sizes=list, act_fn=str, output_classes=int, optimiser=str, lr=float) -> None:
         super().__init__()
         self.act_fn = _get_act_fn(act_fn)
         self.softmax_ = torch.nn.Softmax(dim=1)
@@ -204,6 +239,8 @@ class ANN_MC_v2(torch.nn.Module):
             self.fc_layers.append(torch.nn.Linear(prev, size))
             prev = size
         self.fc_n = torch.nn.Linear(prev, output_classes)
+        self.input_size = input_size
+        self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
     
     def forward(self, input):
         """ Performs forward pass through the network.
@@ -233,8 +270,10 @@ class ANN_MO_v1_1(torch.nn.Module):
 
     """
 
-    def __init__(self, input_size=int, hidden_sizes=list, outputs=list, act_fn=str) -> None:
+    def __init__(self, input_size=int, hidden_sizes=list, outputs=list, act_fn=str, optimiser=str, lr=float) -> None:
         super().__init__()
+
+        self.input_size = input_size
         
         # hidden layers for predicting outputs
         self.fc_layers = torch.nn.ModuleList()
@@ -252,6 +291,8 @@ class ANN_MO_v1_1(torch.nn.Module):
 
         self.act_fn = _get_act_fn(act_fn)
         self.softmax_ = torch.nn.Softmax(dim=1)
+        self.input_size = input_size
+        self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
     
     def forward(self, input):
         x = input
@@ -288,23 +329,25 @@ class ANN_MO_v1_2(torch.nn.Module):
 
     """
 
-    def __init__(self, input_size=int, hidden_first=int, outputs=list, hidden_dims=list, act_fn=str,) -> None:
+    def __init__(self, input_size=int, hidden_first=int, outputs=list, hidden_dims=list, act_fn=str, optimiser=str, lr=float) -> None:
         super().__init__()
 
+        self.input_size = input_size
         self.outputs = outputs
         self.hidden_dims = hidden_dims
 
         self.fc_1 = torch.nn.Linear(input_size, hidden_first)
         self.fc_outputs = torch.nn.ModuleList()
         for i, output in enumerate(self.outputs):
-            fc_layer_output = torch.nn.ModuleList(
-                [torch.nn.Linear(hidden_first, self.hidden_dims[i])],
-                [torch.nn.Linear(self.hidden_dims[i], output)]
-            )
+            fc_layer_output = torch.nn.ModuleList([
+                torch.nn.Linear(hidden_first, self.hidden_dims[i]),
+                torch.nn.Linear(self.hidden_dims[i], output)
+            ])
             self.fc_outputs.append(fc_layer_output)
         
         self.act_fn = _get_act_fn(act_fn)
         self.softmax_ = torch.nn.Softmax(dim=1)
+        self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
     
     def forward(self, input):
         x = self.act_fn(self.fc_1(input))
@@ -325,37 +368,9 @@ class ANN_MO_v1_2(torch.nn.Module):
 
 if __name__ == "__main__":
 
-    model1 = MLP_BC_v1(input_size=10, hidden_size=20, num_layers=2, act_fn='relu', optimiser='adam')
+    # testing model summary to write to file
+    model1 = MLP_BC_v1(input_size=10, hidden_size=20, act_fn='relu', optimiser='adam', lr=0.01)
+    a = get_model_summary(model1)
+    write_to_file('model_summary.txt', a)
 
-    print(torchsummary.summary(model1, (10,), device='mps'))
-    print(torchsummary.summary(model1, (10,), device='cpu'))
-
-
-class RNN_MC_v1(torch.nn.Module):
-    """ Recurrent Neural Network for Multiclass Classification version 1
-    """
-
-    raise NotImplementedError
-
-    def __init__(self, input_size=int, hidden_size=int, output_classes=int, num_layers=int,  act_fn=str) -> None:
-        super().__init__()
-        
-        self.hidden_size = hidden_size
-        self.fc_1 = torch.nn.Linear(input_size, hidden_size)
-        self.fc_input_to_hidden = torch.nn.Linear(input_size + hidden_size, hidden_size)
-        self.fc_input_to_output = torch.nn.Linear(input_size + hidden_size, output_classes)
-        self.softmax_ = torch.nn.Softmax(dim=1)
-
-        self.rnn = torch.nn.RNN(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc_n = torch.nn.Linear(hidden_size, output_classes)
-        self.act_fn = _get_act_fn(act_fn)
-        self.softmax_ = torch.nn.Softmax(dim=1)
-    
-    def forward(self, input, hidden):
-
-        x = torch.cat((input, hidden), dim=1)
-        hidden = self.fc_input_to_hidden(x)
-        output = self.fc_input_to_output(x)
-        output = self.softmax_(output)
-        return output, hidden
 

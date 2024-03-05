@@ -9,25 +9,12 @@ def get_device() -> torch.device:
     else:
         return torch.device('cpu')
 
-def get_data(file_path=str, continous_columns=list, categorical_columns=list, target_columns=str):
-    file_df = pd.read_csv(file_path)
-    pre_processed_df = pd.DataFrame({})
-
-    for continous_variable in continous_columns:
-        pre_processed_df[continous_variable] = file_df[continous_variable].astype(float)
-    
-    for categorical_variable in categorical_columns:
-        pre_processed_df = pd.concat([pre_processed_df, pd.get_dummies(file_df[categorical_variable])], axis=1)
-    
-    for target_variable in target_columns:
-        pre_processed_df[target_variable] = file_df[target_variable].astype(float)
-    return pre_processed_df
-
 
 def process_laptime_v1(laptime=str, VERBOSE=False):
     try:
         process_1 = str(laptime).split(':')
         processed_laptime = [int(process_1[1]), float(process_1[2]), round(60*int(process_1[1]) + float(process_1[2]), 7)]
+        processed_laptime_milliseconds = int(processed_laptime[2]*1000)
     except IndexError as e:
         print(f'race ended for driver')
         processed_laptime = [0, 0, 0]
