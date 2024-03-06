@@ -44,6 +44,15 @@ def write_to_file(file_name, content):
             f.write(content)
             f.close()
 
+def get_device() -> torch.device:
+    """ Returns the appropriate device based on MPS, CUDA, or CPU in order
+    """
+    if torch.backends.mps.is_available():
+        return torch.device('mps')
+    elif torch.cuda.is_available():
+        return torch.device('cuda')
+    else:
+        return torch.device('cpu')
 
 class MLP_BC_v1(torch.nn.Module):
     """ Multilayer Perceptron for Binary Classification version 1
