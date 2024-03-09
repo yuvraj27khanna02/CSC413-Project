@@ -1,32 +1,26 @@
 import pandas as pd
 import torch
 
+FILE_PATH = "data/bahrain-2022.csv"
+bahrain_22_data = pd.read_csv(FILE_PATH)
 
-def process_laptime_v1(laptime=str, VERBOSE=False):
-    try:
-        process_1 = str(laptime).split(':')
-        processed_laptime = [int(process_1[1]), float(process_1[2]), round(60*int(process_1[1]) + float(process_1[2]), 7)]
-        processed_laptime_milliseconds = int(processed_laptime[2]*1000)
-    except IndexError as e:
-        print(f'race ended for driver')
-        processed_laptime = [0, 0, 0]
-    except Exception as e:
-        print(f'ERROR: {e}')
-    if VERBOSE:
-        print(f'laptime: {laptime} \t processed: {processed_laptime}')
-    return processed_laptime
+def process_data_1(data, cols_to_one_hot=["Driver", "Compound", "Team", "Position"]):
 
+    temp_data = pd.get_dummies(data, columns=cols_to_one_hot, dtype=int)
+    temp_data.to_csv('data/bhr_22_process.csv')
+    temp_data = temp_data.iloc[:, 1:]
+    columns = temp_data.columns
+    tensor = torch.tensor(temp_data.values, dtype=torch.float32)
 
-def preprocess_data_v1(file_path=str):
-    file_df = pd.read_csv(file_path)
-    laptime_df = pd.DataFrame([process_laptime_v1(laptime, VERBOSE=True) for laptime in file_df['LapTime']], columns=['LapTime_Minutes', 'LapTime_Seconds', 'LapTime_Total'])
+    return tensor, columns
 
-    return laptime_df
+pp_data, cols = process_data_1(bahrain_22_data)
 
+# print(pp_data.size())
 
-FILE_PATH = 'data/bahrain-2022.csv'
+# for i, col in enumerate(cols):
+#     print(f"{col}: {pp_data[0][i]}")
 
-pp_data = preprocess_data_v1(FILE_PATH)
+# print(pp_data[0])
 
-print(pp_data.head())
 

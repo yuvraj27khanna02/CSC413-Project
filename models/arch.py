@@ -374,6 +374,24 @@ class ANN_MO_v1_2(torch.nn.Module):
 
         return out
 
+class RNN_MO_v1(torch.nn.Module):
+
+    def __init__(self) -> None:
+        super().__init__()
+        raise NotImplementedError
+    
+class GRU_MO_v1(torch.nn.Module):
+
+    def __init__(self) -> None:
+        super().__init__()
+        raise NotImplementedError
+    
+class LSTM_MO_v1(torch.nn.Module):
+
+    def __init__(self) -> None:
+        super().__init__()
+        raise NotImplementedError
+
 
 if __name__ == "__main__":
 
