@@ -1,5 +1,5 @@
 import torch
-import torchsummary
+from torchsummary import summary
 import sys
 import io
 import os
@@ -26,10 +26,10 @@ def _get_optimiser(optimiser=str, model_params=dict, lr=float):
     if optimiser == 'rmsprop':
         return torch.optim.RMSprop(model_params, lr=lr)
 
-def get_model_summary(model):
+def get_model_summary(model, batch_size=1):
     old_stdout = sys.stdout
     sys.stdout = io.StringIO()
-    torchsummary.summary(model, (model.input_size,))
+    summary(model=model, input_size=(model.input_size,), batch_size=batch_size, col_width=20)
     a = sys.stdout.getvalue()
     sys.stdout = old_stdout
     return a
@@ -46,10 +46,17 @@ def write_to_file(file_name, content):
 
 def get_device() -> torch.device:
     """ Returns the appropriate device based on MPS, CUDA, or CPU in order
-    """
+
+    original
     if torch.backends.mps.is_available():
         return torch.device('mps')
     elif torch.cuda.is_available():
+        return torch.device('cuda')
+    else:
+        return torch.device('cpu')
+    """
+    # TODO: Add support for MPS!
+    if torch.cuda.is_available():
         return torch.device('cuda')
     else:
         return torch.device('cpu')
@@ -84,6 +91,7 @@ class MLP_regression_v1(torch.nn.Module):
         self.fc_n = torch.nn.Linear(hidden_size, 1)
         self.act_fn = _get_act_fn(act_fn)
         self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
+        self.device = get_device()
     
     def forward(self, input):
         x = self.act_fn(self.fc_1(input))
@@ -102,6 +110,7 @@ class MLP_MC_v1(torch.nn.Module):
         self.act_fn = _get_act_fn(act_fn)
         self.softmax_ = torch.nn.Softmax(dim=1)
         self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
+        self.device = get_device()
     
     def forward(self, input):
         x = self.act_fn(self.fc_1(input))
@@ -359,18 +368,19 @@ class ANN_MO_v1_2(torch.nn.Module):
         self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
     
     def forward(self, input):
-        x = self.act_fn(self.fc_1(input))
+        x = self.fc_1(input)
 
         out = torch.tensor([])
 
         for i, output in enumerate(self.outputs):
+            x_i = x.clone()
             for layer in self.fc_outputs[i]:
-                x = self.act_fn(layer(x))
+                x_i = layer(self.act_fn(x_i))
             
             if output == 1:
-                out = torch.cat((out, layer(x)), dim=1)
+                out = torch.cat((out, x_i), dim=1)
             else:
-                out = torch.cat((out, self.softmax_(layer(x))), dim=1)
+                out = torch.cat((out, self.softmax_(x_i)), dim=1)
 
         return out
 
@@ -392,12 +402,64 @@ class LSTM_MO_v1(torch.nn.Module):
         super().__init__()
         raise NotImplementedError
 
+class ANN_MIMO_v2(torch.nn.Module):
+    """ ANN for multiple input and 2 outputs of regression (laptime) and classification (20 positions)
+    """
+
+    def __init__(self, input_num=int, input_size=int, hidden_dim=int, emb_dim=int,
+                 hidden_output_list=list, act_fn=str, optimiser=str, lr=float) -> None:
+        super().__init__()
+
+        self.act_fn = _get_act_fn(act_fn)
+        self.device = get_device()
+        
+        self.input_size = input_size * input_num
+        self.lr = lr
+        self.input_num = input_num
+        self.emb_output_dim = emb_dim
+        self.hidden_cat_size = self.input_num * self.emb_output_dim
+        self.emb_input_dim = input_size
+
+        self.fc_emb = torch.nn.Linear(self.emb_input_dim, self.emb_output_dim)
+        self.middle_model = ANN_MO_v1_2(input_size=self.hidden_cat_size, hidden_first=hidden_dim, outputs=[1, 20], hidden_dims=hidden_output_list, act_fn=act_fn, optimiser=optimiser, lr=lr)
+
+        self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
+
+    def forward(self, input):
+        input.to(self.device)
+        inputs_list = torch.split(input, self.emb_input_dim, dim=1)
+
+        hidden_cat = torch.cat([self.act_fn(self.fc_emb(i)) for i in inputs_list], dim=1)
+        out = self.middle_model(hidden_cat)
+
+        out_laptime = out[:, :1]
+        out_position = out[:, 1:]
+
+        return out_laptime, out_position
+    
+    def get_optimiser(self):
+        return self.optimiser
+    
+    def get_lr(self):
+        return self.lr
+    
+    def get_device(self):
+        return self.device
+    
+    def get_inputsize(self):
+        return self.input_size
 
 if __name__ == "__main__":
 
     # testing model summary to write to file
-    model1 = MLP_BC_v1(input_size=10, hidden_size=20, act_fn='relu', optimiser='adam', lr=0.01)
+
+    model1 = ANN_MO_v1_2(input_size=10, hidden_first=20, outputs=[1, 20], hidden_dims=[10, 50], act_fn='relu', optimiser='adam', lr=0.01)
     a = get_model_summary(model1)
-    write_to_file('model_summary.txt', a)
+    model2 = ANN_MO_v1_2(input_size=10, hidden_first=20, outputs=[1, 10], hidden_dims=[10, 50], act_fn='sig', optimiser='sgd', lr=0.01)
+    a += get_model_summary(model2)
+    print('hello world!')
+    model3 = ANN_MIMO_v2(input_num=20, input_size=500, hidden_dim=200, emb_dim=50, hidden_output_list=[5, 30], act_fn='relu', optimiser='adam', lr=0.01)
+    a += get_model_summary(model3)
+    write_to_file('model_summary_1.txt', a)
 
-
+    pass
