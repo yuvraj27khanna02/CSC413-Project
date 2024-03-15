@@ -1,6 +1,24 @@
 import pandas as pd
 import torch
-from arch import ANN_MIMO_v2
+from arch import ANN_MIMO_v2, Loss_Model_v1
+from data_preprocessing import load_data
+
+def get_device() -> torch.device:
+    """ Returns the appropriate device based on MPS, CUDA, or CPU in order    
+
+    original:
+    if torch.backends.mps.is_available():
+        return torch.device('mps')
+    elif torch.cuda.is_available():
+        return torch.device('cuda')
+    else:
+        return torch.device('cpu')
+
+    """
+    if torch.cuda.is_available():
+        return torch.device('cuda')
+    else:
+        return torch.device('cpu')
 
 def generate_ngrams(df, n, columns_to_drop=['Driver_Orig', 'Event_Orig']):
     """generate_ngrams creates n-grams from the input dataframe of consecutive laps
@@ -30,62 +48,63 @@ def generate_ngrams(df, n, columns_to_drop=['Driver_Orig', 'Event_Orig']):
     col_names = [f'{col}_{i+1}' for i in range(n) for col in group]
     ngrams_df = pd.DataFrame(ngrams_list, columns=col_names)
 
-    return ngrams_df
+    return ngrams_df.dropna()
 
-def data_to_device(data:torch.utils.data.DataLoader, device:torch.device):
-    for X, t_lt, t_p in data:
-        X, t_lt, t_p = X.to(device), t_lt.to(device), t_p.to(device)
-
-def print_df(df:pd.DataFrame):
-    index_i = 0
-    print('index \t value \t dtype \t column name')
-    for col in df.columns:
-        print(f"{index_i} \t| {round(df[col][0], 4)} \t| {df[col].dtype} \t| {col}")
-        index_i += 1
-
-def get_laptime_accuracy(dataset:torch.utils.data.TensorDataset, model:torch.nn.Module):
-    total_accuracy = 0
+def get_laptime_accuracy(dataset:torch.utils.data.TensorDataset, model:torch.nn.Module,
+                         output_mae_accuracy=True, output_mse_accuracy=False, output_rmse_accuracy=False):
+    total_mae_accuracy = 0
+    total_mse_accuracy = 0
+    total_rmse_accuracy = 0
     total_count = 0
+
     for (X, t_laptime, t_position) in dataset:
+        t_laptime = t_laptime.view(-1, 1)
         y_laptime, y_position = model(X)
-        accuracy = torch.mean(torch.abs(y_laptime - t_laptime))
-        total_accuracy += accuracy
+
+        mae_accuracy = torch.mean(torch.abs(y_laptime - t_laptime))
+        mse_accuracy = torch.mean((y_laptime - t_laptime)**2)
+        rmse_accuracy = torch.sqrt(mse_accuracy)
+
+        total_mae_accuracy += mae_accuracy
+        total_mse_accuracy += mse_accuracy
+        total_rmse_accuracy += rmse_accuracy
         total_count += 1
-    return total_accuracy / total_count
+    
+    if output_mae_accuracy and output_mse_accuracy and output_rmse_accuracy:
+        return total_mae_accuracy / total_count, total_mse_accuracy / total_count, total_rmse_accuracy / total_count
+    elif output_mae_accuracy:
+        return total_mae_accuracy / total_count
+    else:
+        raise ValueError("No output specified")
 
 def get_position_accuracy(dataset:torch.utils.data.TensorDataset, model:torch.nn.Module):
     total_correct = 0
     total_count = 0
     for (X, t_laptime, t_position) in dataset:
         y_laptime, y_position = model(X)
-        pred_position = y_position >= 0.5
-        total_correct += int(torch.sum(pred_position == t_position))
+        total_correct += int(torch.sum(y_position == t_position))
         total_count += t_position.shape[0]
     return total_correct / total_count
 
-def get_data(file_path=str, n=3, train_split=0.6, val_split=0.2,
-             batch_size=32,
+def get_data(n=3, train_split=0.6, val_split=0.2,
+             batch_size=32, device=get_device(),
              VERBOSE=False):
-
-    df = pd.read_csv(file_path)
-    ngrams_data_df = generate_ngrams(df, n)
-    if VERBOSE:
-        print_df(ngrams_data_df)
     
-    # TODO: which dtype to use?
-    ngrams_data_tensor = torch.tensor(ngrams_data_df.values, dtype=torch.float32)
-   
-    X_tensor, t_tensor = ngrams_data_tensor[:, :-125], ngrams_data_tensor[:, -125:]
+    filepath = f"pp_data/ngrams_data_{n}_{125}.pth"
+    tensor_data = load_data(file_path=filepath)
+    X_tensor, t_tensor = tensor_data.tensors
+    X_tensor, t_tensor = X_tensor.to(device), t_tensor.to(device)
     t_laptime = t_tensor[:, 1]
     t_postion = t_tensor[:, 57:77]
-    total_rows = ngrams_data_tensor.shape[0]
+    total_rows = X_tensor.shape[0]
     train_count, val_count = int(total_rows * train_split), int(total_rows * (train_split+val_split))
     
     train_dataset = torch.utils.data.TensorDataset(X_tensor[:train_count], t_laptime[:train_count], t_postion[:train_count])
     val_dataset = torch.utils.data.TensorDataset(X_tensor[train_count:val_count], t_laptime[train_count:val_count], t_postion[train_count:val_count])
     test_dataset = torch.utils.data.TensorDataset(X_tensor[val_count:], t_laptime[val_count:], t_postion[val_count:])
     if VERBOSE:
-        print(f"train: {len(train_dataset)} \t val: {len(val_dataset)} \t test: {len(test_dataset)}")
+        print(f"train size: {len(train_dataset)} \t val size: {len(val_dataset)} \t test size: {len(test_dataset)}")
+        print(f"train device:{train_dataset.tensors[0].device} \t val device:{val_dataset.tensors[0].device} \t test device:{test_dataset.tensors[0].device}")
 
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
@@ -93,6 +112,7 @@ def get_data(file_path=str, n=3, train_split=0.6, val_split=0.2,
     if VERBOSE:
         X, t_lt, t_p = next(iter(train_dataloader))
         print(f"X={X.shape} \t t_laptime={t_lt.shape} \t t_position={t_p.shape}")
+        print(f"X device:{X.device} \t t_laptime device:{t_lt.device} \t t_position device:{t_p.device}")
     
     return train_dataloader, val_dataloader, test_dataloader
 
@@ -103,11 +123,16 @@ def train_model(model:ANN_MIMO_v2,
                 verbose_every=10,
                 criterion_laptime=torch.nn.MSELoss(),
                 criterion_position=torch.nn.CrossEntropyLoss(),
+                device=get_device(),
+                datatype=torch.float32,
+                loss_model=Loss_Model_v1,
                 VERBOSE=False):
     
-    # model.to(model.get_device())
-    # data_to_device(train_dataloader, model.get_device())
-    # data_to_device(val_dataloader, model.get_device())
+    if VERBOSE:
+        print(f"Training on {device}")
+    
+    model.to(device, dtype=datatype)
+    loss_model.to(device, dtype=datatype)
 
     train_loss_sum_list = []
     train_loss_laptime_list = []
@@ -118,36 +143,43 @@ def train_model(model:ANN_MIMO_v2,
     val_acc_position_list = []
     epoch_list = []
     itr_list = []
-
-    optimiser = model.get_optimiser()
+    model_parameters_list = []
+    loss_model_parameters_list = []
+    
+    model_optimiser = model.get_optimiser()
+    loss_optimiser = loss_model.get_optimiser()
     iter_count = 0
 
     for epoch in range(num_epochs):
         for (X, t_laptime, t_position) in train_dataloader:
 
+            # Format data
+            X = X.to(device, dtype=datatype)
+            t_laptime = t_laptime.to(device, dtype=datatype)
+            t_position = t_position.to(device, dtype=datatype)
             t_laptime = t_laptime.view(-1, 1)
 
+            # Training model
             model.train()
-
+            # Forward pass
             y_laptime, y_position = model(X)
             loss_laptime = criterion_laptime(y_laptime, t_laptime)
-            
-            # TODO: If error line below try t_position.softmax(dim=1)
             loss_position = criterion_position(y_position, t_position)
-
-            # TODO: test different loss weights?  If result not good then try backward pass separately?
-            loss = loss_laptime + loss_position
-
+            loss = loss_model(loss_laptime, loss_position)
+            # Backward pass
             loss.backward()
-            optimiser.step()
-            optimiser.zero_grad()
+            loss_optimiser.step()
+            loss_optimiser.zero_grad()
+            model_optimiser.step()
+            model_optimiser.zero_grad()
 
-            model.eval()
-
-            train_laptime_accuracy = get_laptime_accuracy(train_dataloader, model)
-            train_position_accuracy = get_position_accuracy(train_dataloader, model)
-            val_laptime_accuracy = get_laptime_accuracy(val_dataloader, model)
-            val_position_accuracy = get_position_accuracy(val_dataloader, model)
+            # Evaluating model
+            with torch.no_grad():
+                model.eval()
+                train_laptime_accuracy = get_laptime_accuracy(train_dataloader, model)
+                train_position_accuracy = get_position_accuracy(train_dataloader, model)
+                val_laptime_accuracy = get_laptime_accuracy(val_dataloader, model)
+                val_position_accuracy = get_position_accuracy(val_dataloader, model)
             
             train_loss_sum_list.append(loss.item())
             train_loss_laptime_list.append(loss_laptime.item())
@@ -158,16 +190,18 @@ def train_model(model:ANN_MIMO_v2,
             val_acc_position_list.append(val_position_accuracy)
             epoch_list.append(epoch)
             itr_list.append(iter_count)
+            # TODO: add model params to model_parameters_list
+            loss_model_parameters_list.append(dict(loss_model.state_dict()))
 
             if (VERBOSE) and (iter_count % verbose_every == 0):
                 print(f"epoch:{epoch} \t itr:{iter_count} \t batch size:{y_laptime.shape[0]} \t loss:{loss.item()}"
-                      f"\ntrain laptime loss: {loss_laptime.item()} \t train laptime accuracy: {train_laptime_accuracy} \t val laptime accuracy: {val_laptime_accuracy}"
-                      f"\ntrain position loss: {loss_position.item()} \t train position accuracy: {train_position_accuracy} \t val position accuracy: {val_position_accuracy}\n")
+                      f"\n LOSS MODEL \t w1:{loss_model.w1.item()} \t w2:{loss_model.w2.item()}"
+                      f"\n LAPTIME OUTPUT \t train mse loss: {loss_laptime.item()} \t train mae accuracy: {train_laptime_accuracy} \t val mae accuracy: {val_laptime_accuracy}"
+                      f"\n POSITION OUTPUT \t train loss: {loss_position.item()} \t train accuracy: {train_position_accuracy} \t val accuracy: {val_position_accuracy} \n")
 
             iter_count += 1
     
     return {
-        'optimiser': optimiser,
         'laptime_loss_criterion': criterion_laptime,
         'position_loss_criterion': criterion_position,
         'train_loss_sum': train_loss_sum_list,
@@ -184,13 +218,14 @@ def train_model(model:ANN_MIMO_v2,
 if __name__ == "__main__":
 
     file_path = "data/processed-data.csv"
-    train_dataloader, val_dataloader, test_dataloader = get_data(file_path, n=3, VERBOSE=True)
+    train_dataloader, val_dataloader, test_dataloader = get_data(n=3, batch_size=16, VERBOSE=True)
 
-    model1 = ANN_MIMO_v2(input_num=2, input_size=125, hidden_dim=100, emb_dim=30, hidden_output_list=[5, 25], act_fn='relu', optimiser='adam', lr=0.01)
+    model1 = ANN_MIMO_v2(input_num=2, input_size=125, hidden_dim=100, emb_dim=30, hidden_output_list=[5, 25], act_fn='relu', optimiser='adam', lr=0.0001)
+    loss_model1 = Loss_Model_v1(optimiser='adam', lr=0.1)
 
     print(f"\n === Training model === \n")
     
-    metrics = train_model(model=model1, train_dataloader=train_dataloader, val_dataloader=val_dataloader, num_epochs=10, verbose_every=100, VERBOSE=True)
+    metrics = train_model(model=model1, loss_model=loss_model1, train_dataloader=train_dataloader, val_dataloader=val_dataloader, num_epochs=10, verbose_every=100, VERBOSE=True)
 
     import json
     with open('metrics.json', 'w') as f:

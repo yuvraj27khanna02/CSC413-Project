@@ -29,7 +29,7 @@ def _get_optimiser(optimiser=str, model_params=dict, lr=float):
 def get_model_summary(model, batch_size=1):
     old_stdout = sys.stdout
     sys.stdout = io.StringIO()
-    summary(model=model, input_size=(model.input_size,), batch_size=batch_size, col_width=20)
+    summary(model=model, input_size=(model.input_size,), batch_size=batch_size)
     a = sys.stdout.getvalue()
     sys.stdout = old_stdout
     return a
@@ -44,22 +44,37 @@ def write_to_file(file_name, content):
             f.write(content)
             f.close()
 
-def get_device() -> torch.device:
-    """ Returns the appropriate device based on MPS, CUDA, or CPU in order
-
-    original
-    if torch.backends.mps.is_available():
-        return torch.device('mps')
-    elif torch.cuda.is_available():
-        return torch.device('cuda')
-    else:
-        return torch.device('cpu')
+class Loss_Model_v1(torch.nn.Module):
     """
-    # TODO: Add support for MPS!
-    if torch.cuda.is_available():
-        return torch.device('cuda')
-    else:
-        return torch.device('cpu')
+    Loss_Model_v1 class represents a custom loss model for a specific task.
+
+    This model takes two inputs, `loss_laptime` and `loss_position`, and applies linear transformations
+    to them using two linear layers (`w1` and `w2`). The output is the sum of the transformed inputs.
+
+    Attributes:
+        w1 (torch.nn.Linear): Linear layer for loss_laptime.
+        w2 (torch.nn.Linear): Linear layer for loss_position.
+    """
+
+    def __init__(self, optimiser=str, lr=float) -> None:
+        super().__init__()
+        self.w1 = torch.nn.Parameter(torch.tensor(1.0, requires_grad=True, dtype=torch.float))
+        self.w2 = torch.nn.Parameter(torch.tensor(5000.0, requires_grad=True, dtype=torch.float))
+
+        self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
+
+    def forward(self, loss_laptime, loss_position):
+        """ Forward pass of the Loss_Model_v1.
+
+        Args:
+            loss_laptime (torch.Tensor): Input tensor 0D representing the loss for laptime.
+            loss_position (torch.Tensor): Input tensor 0D representing the loss for position.
+        """
+        out = (self.w1 * loss_laptime) + (self.w2 * loss_position)
+        return out
+    
+    def get_optimiser(self):
+        return self.optimiser
 
 class MLP_BC_v1(torch.nn.Module):
     """ Multilayer Perceptron for Binary Classification version 1
@@ -91,7 +106,6 @@ class MLP_regression_v1(torch.nn.Module):
         self.fc_n = torch.nn.Linear(hidden_size, 1)
         self.act_fn = _get_act_fn(act_fn)
         self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
-        self.device = get_device()
     
     def forward(self, input):
         x = self.act_fn(self.fc_1(input))
@@ -110,7 +124,6 @@ class MLP_MC_v1(torch.nn.Module):
         self.act_fn = _get_act_fn(act_fn)
         self.softmax_ = torch.nn.Softmax(dim=1)
         self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
-        self.device = get_device()
     
     def forward(self, input):
         x = self.act_fn(self.fc_1(input))
@@ -370,7 +383,7 @@ class ANN_MO_v1_2(torch.nn.Module):
     def forward(self, input):
         x = self.fc_1(input)
 
-        out = torch.tensor([])
+        out = torch.tensor([]).to(input.device)
 
         for i, output in enumerate(self.outputs):
             x_i = x.clone()
@@ -411,7 +424,6 @@ class ANN_MIMO_v2(torch.nn.Module):
         super().__init__()
 
         self.act_fn = _get_act_fn(act_fn)
-        self.device = get_device()
         
         self.input_size = input_size * input_num
         self.lr = lr
@@ -425,9 +437,8 @@ class ANN_MIMO_v2(torch.nn.Module):
 
         self.optimiser = _get_optimiser(optimiser, self.parameters(), lr)
 
-    def forward(self, input):
-        input.to(self.device)
-        inputs_list = torch.split(input, self.emb_input_dim, dim=1)
+    def forward(self, input_x):
+        inputs_list = torch.split(tensor=input_x, split_size_or_sections=self.emb_input_dim, dim=1)
 
         hidden_cat = torch.cat([self.act_fn(self.fc_emb(i)) for i in inputs_list], dim=1)
         out = self.middle_model(hidden_cat)
@@ -442,9 +453,6 @@ class ANN_MIMO_v2(torch.nn.Module):
     
     def get_lr(self):
         return self.lr
-    
-    def get_device(self):
-        return self.device
     
     def get_inputsize(self):
         return self.input_size
