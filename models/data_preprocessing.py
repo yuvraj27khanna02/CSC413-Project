@@ -37,6 +37,7 @@ def get_data(file_path=str, n=int, data_dim=int):
 
     ngrams_data_tensor = torch.tensor(ngrams_data_df.values, dtype=torch.float32)
     X_tensor, t_tensor = ngrams_data_tensor[:, :-data_dim], ngrams_data_tensor[:, -data_dim:]
+    print(f"X_tensor: {X_tensor.size()} \t t_tensor: {t_tensor.size()}")
     tensor_data = torch.utils.data.TensorDataset(X_tensor, t_tensor)
     
     return tensor_data
@@ -95,5 +96,5 @@ if __name__ == "__main__":
     # loaded_data = load_data(file_path=file_path)
     # print('data loaded')
 
-    file_path = save_data(preprocess_data_path=PREPROCESS_DATA_PATH, n=3, data_dim=125)
+    file_path = save_data(preprocess_data_path=PREPROCESS_DATA_PATH, n=3, data_dim=124)
 
