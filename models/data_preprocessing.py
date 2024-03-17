@@ -32,7 +32,7 @@ def generate_ngrams(df, n, columns_to_drop=['Driver_Orig', 'Event_Orig']):
 
 def get_data(file_path=str, n=int, data_dim=int):
     
-    df = pd.read_csv(file_path)
+    df = pd.read_csv(file_path).iloc[:, 1:]
     ngrams_data_df = generate_ngrams(df, n).dropna()
 
     ngrams_data_tensor = torch.tensor(ngrams_data_df.values, dtype=torch.float32)
@@ -52,7 +52,15 @@ def load_data(file_path):
         return e
 
 def save_data(preprocess_data_path=str, n=int, data_dim=int):
-    file_path = f"pp_data/ngrams_data_{n}_{data_dim}.pth"
+    """
+    Saves preprocessed data as a PyTorch tensor to a specified file path.
+
+    Args:
+        preprocess_data_path (str): The file path of the preprocessed data.
+        n (int): The value of 'n' for n-grams.
+        data_dim (int): The dimension of the data.
+    """
+    file_path = f"ready_data/ngrams_data_{n}_{data_dim}.pth"
     tensor_data = get_data(file_path=preprocess_data_path, n=n, data_dim=data_dim)
     try:
         torch.save(tensor_data, file_path)
