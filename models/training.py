@@ -89,13 +89,16 @@ def get_position_accuracy(dataset:torch.utils.data.TensorDataset, model:torch.nn
         total_count += t_position.shape[0]
     return total_correct / total_count
 
-def get_laptime_accuracy_v2(dataset, laptime_model):
+def get_laptime_accuracy_v2(dataset, laptime_model, device):
     total_mae = 0
     total_mse = 0
     total_rmse = 0
     total_count = 0
     for (X, t_laptime, _) in dataset:
         t_laptime = t_laptime.view(-1, 1)
+        X = X.to(device)
+        t_laptime = t_laptime.to(device)
+
         y_laptime = laptime_model(X)
         mae_accuracy = torch.mean(torch.abs(y_laptime - t_laptime))
         mse_accuracy = torch.mean((y_laptime - t_laptime)**2)
@@ -106,10 +109,13 @@ def get_laptime_accuracy_v2(dataset, laptime_model):
         total_count += 1
     return total_mae / total_count, total_mse / total_count, total_rmse / total_count
 
-def get_position_accuracy_v2(dataset, position_model):
+def get_position_accuracy_v2(dataset, position_model, device):
     total_correct = 0
     total_count = 0
     for (X, _, t_position) in dataset:
+        X = X.to(device)
+        t_position = t_position.to(device)
+
         y_position = position_model(X)
         total_correct += int(torch.sum(y_position == t_position))
         total_count += t_position.shape[0]
@@ -265,8 +271,7 @@ def train_model_v2(laptime_model: MLP_regression_v1,
 
     if VERBOSE:
         X, t_lt, t_p = next(iter(train_dataloader))
-        print(f"X={X.shape} \t t_laptime={t_lt.shape} \t t_position={t_p.shape}")
-        print(f"X device:{X.device} \t t_laptime device:{t_lt.device} \t t_position device:{t_p.device}")
+        print(f"X={X.shape} \t t_laptime={t_lt.shape} \t t_position={t_p.shape} \t device={device}")
     
     laptime_model.to(device)
     position_model.to(device)
@@ -322,10 +327,10 @@ def train_model_v2(laptime_model: MLP_regression_v1,
             with torch.no_grad():
                 laptime_model.eval()
                 position_model.eval()
-                train_laptime_mae, train_laptime_mse, train_laptime_rmse = get_laptime_accuracy_v2(train_dataloader, laptime_model)
-                val_laptime_mae, val_laptime_mse, val_laptime_rmse = get_laptime_accuracy_v2(val_dataloader, laptime_model)
-                train_position_accuracy = get_position_accuracy_v2(train_dataloader, position_model)
-                val_position_accuracy = get_position_accuracy_v2(val_dataloader, position_model)
+                train_laptime_mae, train_laptime_mse, train_laptime_rmse = get_laptime_accuracy_v2(train_dataloader, laptime_model, device)
+                val_laptime_mae, val_laptime_mse, val_laptime_rmse = get_laptime_accuracy_v2(val_dataloader, laptime_model, device)
+                train_position_accuracy = get_position_accuracy_v2(train_dataloader, position_model, device)
+                val_position_accuracy = get_position_accuracy_v2(val_dataloader, position_model, device)
 
             train_acc_laptime_list.append({
                 'mae': train_laptime_mae.item(),
@@ -432,7 +437,7 @@ if __name__ == "__main__":
     val_dataset = torch.utils.data.TensorDataset(*race_lap_ngrams.get_val_tensors())
     test_dataset = torch.utils.data.TensorDataset(*race_lap_ngrams.get_test_tensors())
     
-    device = torch.device('cpu')
+    device = torch.device('mps')
     data_dim = race_lap_ngrams.data_dim
 
     hidden_size_list = [(10, 30), (20, 50), (30, 50), (50, 50)]
