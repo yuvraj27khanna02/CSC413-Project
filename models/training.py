@@ -4,6 +4,7 @@ from arch import *
 from data_preprocessing import load_data
 import json
 from datetime import datetime
+from race_lap_ngrams import RaceLapNgrams
 
 def json_write(data, filepath):
     with open(filepath, 'w') as f:
@@ -321,11 +322,10 @@ def train_model_v2(laptime_model: MLP_regression_v1,
             with torch.no_grad():
                 laptime_model.eval()
                 position_model.eval()
-
                 train_laptime_mae, train_laptime_mse, train_laptime_rmse = get_laptime_accuracy_v2(train_dataloader, laptime_model)
                 val_laptime_mae, val_laptime_mse, val_laptime_rmse = get_laptime_accuracy_v2(val_dataloader, laptime_model)
                 train_position_accuracy = get_position_accuracy_v2(train_dataloader, position_model)
-                val_position_accuracy = get_position_accuracy_v2(train_dataloader, position_model)
+                val_position_accuracy = get_position_accuracy_v2(val_dataloader, position_model)
 
             train_acc_laptime_list.append({
                 'mae': train_laptime_mae.item(),
@@ -425,10 +425,15 @@ if __name__ == "__main__":
 
     all_metrics = []
 
-    device = torch.device('cpu')
-    data_dim = 126
+    race_lap_ngrams = RaceLapNgrams(n=3)
+    race_lap_ngrams.split_by_proportion()
 
-    train_dataset, val_dataset, test_dataset = get_data(n=3, small_data=True, data_dim=data_dim, VERBOSE=True, device=device)
+    train_dataset = torch.utils.data.TensorDataset(*race_lap_ngrams.get_train_tensors())
+    val_dataset = torch.utils.data.TensorDataset(*race_lap_ngrams.get_val_tensors())
+    test_dataset = torch.utils.data.TensorDataset(*race_lap_ngrams.get_test_tensors())
+    
+    device = torch.device('cpu')
+    data_dim = race_lap_ngrams.data_dim
 
     hidden_size_list = [(10, 30), (20, 50), (30, 50), (50, 50)]
     num_layers_list = [2, 3, 5, 10, 15, 20]
