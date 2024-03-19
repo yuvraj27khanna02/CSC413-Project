@@ -66,6 +66,15 @@ class RaceLapNgrams:
         self.val_indices = shuffled_indices[train_split:train_split + val_split]
         self.test_indices = shuffled_indices[train_split + val_split:]
 
+    def get_train_tensors(self):
+        return self.get_tensors(self.train_indices)
+    
+    def get_val_tensors(self):
+        return self.get_tensors(self.val_indices)
+    
+    def get_test_tensors(self):
+        return self.get_tensors(self.test_indices)
+
     def get_tensors(self, indices):
         indices = indices.tolist()
 
