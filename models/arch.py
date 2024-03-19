@@ -120,18 +120,14 @@ class MLP_regression_v1(torch.nn.Module):
     """ MultiLayer Perceptron for Regression version 1
     """
 
-    def __init__(self, input_size=int, hidden_size=int, act_fn=str, data_dim=int) -> None:
+    def __init__(self, hidden_size=int, act_fn=str, data_dim=int) -> None:
         super().__init__()
-        self.input_size = input_size
         self.fc_1 = torch.nn.Linear(data_dim, hidden_size)
         self.fc_n = torch.nn.Linear(hidden_size*2, 1)
         self.fc_1 = torch.nn.Linear(data_dim, hidden_size)
         self.fc_n = torch.nn.Linear(hidden_size*2, 1)
         self.act_fn = _get_act_fn(act_fn)
         self.data_dim = data_dim
-
-        self.data_dim = data_dim
-
     
     def forward(self, input):
         input_list = torch.split(input, self.data_dim, 1)
@@ -141,17 +137,8 @@ class MLP_regression_v1(torch.nn.Module):
         out = self.fc_n(x)
         return out
     
-    def get_optimiser(self):
-        return self.optimiser
-    
     def get_inputsize(self):
-        return self.input_size
-    
-    def get_optimiser(self):
-        return self.optimiser
-    
-    def get_inputsize(self):
-        return self.input_size
+        return self.data_dim
 
 class MLP_MC_v1(torch.nn.Module):
     """ Multilayer Perceptron for Multiclass Classification version 1
@@ -159,14 +146,12 @@ class MLP_MC_v1(torch.nn.Module):
 
     def __init__(self, input_size=int, hidden_size=int, output_classes=int, act_fn=str, data_dim=int) -> None:
         super().__init__()
-        self.input_size = input_size
         self.fc_1 = torch.nn.Linear(data_dim, hidden_size)
         self.fc_n = torch.nn.Linear(hidden_size*2, output_classes)
         self.fc_1 = torch.nn.Linear(data_dim, hidden_size)
         self.fc_n = torch.nn.Linear(hidden_size*2, output_classes)
         self.act_fn = _get_act_fn(act_fn)
         self.softmax_ = torch.nn.Softmax(dim=1)
-        self.data_dim = data_dim
         self.data_dim = data_dim
     
     def forward(self, input):
@@ -178,7 +163,7 @@ class MLP_MC_v1(torch.nn.Module):
         return out
     
     def get_inputsize(self):
-        return self.input_size
+        return self.data_dim
 
 class ANN_emb_v1(torch.nn.Module):
     def __init__(self, input_size=int, input_num=int, hidden_size=int, num_layers=int, emb_size=int, act_fn=str) -> None:

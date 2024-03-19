@@ -5,8 +5,10 @@ def _print_df(df:pd.DataFrame):
     print(df.iloc[0])
     print('='*80)
     index_i = 0
-    print('index \t dtype \t column name')
+    print('index \t | dtype  \t | column name')
     for col in df.columns:
+        if 'Unnamed' in col:
+            continue
         print(f"{index_i} \t| {df[col].dtype} \t| {col}")
         index_i += 1
 
@@ -54,7 +56,7 @@ if __name__ == "__main__":
 
     ngrams_3 = generate_ngrams(df, 3)
 
-    ngrams_3.to_csv('ngrams3.csv')
+    # ngrams_3.to_csv('ngrams3.csv')
 
     ngrams_3 = ngrams_3.dropna()
 

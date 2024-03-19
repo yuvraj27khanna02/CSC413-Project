@@ -96,5 +96,5 @@ if __name__ == "__main__":
     # loaded_data = load_data(file_path=file_path)
     # print('data loaded')
 
-    file_path = save_data(preprocess_data_path=PREPROCESS_DATA_PATH, n=3, data_dim=124)
+    file_path = save_data(preprocess_data_path=PREPROCESS_DATA_PATH, n=3, data_dim=126)
 
