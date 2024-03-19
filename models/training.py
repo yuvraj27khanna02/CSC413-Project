@@ -327,12 +327,20 @@ def train_model_v2(laptime_model: MLP_regression_v1,
                 train_position_accuracy = get_position_accuracy_v2(train_dataloader, position_model)
                 val_position_accuracy = get_position_accuracy_v2(train_dataloader, position_model)
 
+            train_acc_laptime_list.append({
+                'mae': train_laptime_mae.item(),
+                'mse': train_laptime_mse.item(),
+                'rmse': train_laptime_rmse.item()
+            })
+            val_acc_laptime_list.append({
+                'mae': val_laptime_mae.item(),
+                'mse': val_laptime_mse.item(),
+                'rmse': val_laptime_rmse.item()
+            })
             train_loss_laptime_list.append(loss_laptime.item())
             train_loss_position_list.append(loss_position.item())
-
             train_acc_position_list.append((train_laptime_mae.item(), train_laptime_mse.item(), train_laptime_rmse.item()))
             val_acc_position_list.append((val_laptime_mae.item(), val_laptime_mse.item(), val_laptime_rmse.item()))
-            
             train_acc_position_list.append(train_position_accuracy)
             val_acc_position_list.append(val_position_accuracy)
             epoch_list.append(epoch)
@@ -419,8 +427,6 @@ if __name__ == "__main__":
 
     all_metrics = []
 
-    # test to compare training on cpu and mps
-
     device = torch.device('cpu')
     data_dim = 124
 
@@ -428,29 +434,42 @@ if __name__ == "__main__":
 
         train_dataset, val_dataset, test_dataset = get_data(n=3, small_data=True, data_dim=124, VERBOSE=True, device=device)
 
-        hidden_size_list = [(10, 30), (20, 50), (50, 100), (100, 150), (150, 200), (200, 250)]
+        hidden_size_list = [(10, 30), (20, 50), (30, 50), (50, 50)]
 
         for laptime_model_hidden_size, position_model_hidden_size in hidden_size_list:
+            print(f'training hidden size: {laptime_model_hidden_size} , {position_model_hidden_size}')
             laptime_model = MLP_regression_v1(input_size=250, hidden_size=laptime_model_hidden_size, act_fn='relu', data_dim=data_dim)
             position_model = MLP_MC_v1(input_size=250, hidden_size=50, output_classes=20, act_fn='relu', data_dim=data_dim)
             print("\n === Training model 1 === \n")
             metrics = train_model_v2(laptime_model=laptime_model, position_model=position_model,
                                     train_dataset=train_dataset, val_dataset=val_dataset,
                                     laptime_optimiser='adam', position_optimiser='adam',
-                                    verbose_every=100, num_epochs=10, batch_size=32, lr=1e-5, weight_decay=0.001,
+                                    verbose_every=30, num_epochs=1, batch_size=64, lr=1e-5, weight_decay=0.001,
                                     VERBOSE=True, device=device)
             all_metrics.append(metrics)
         
         for num_layers in [2, 3, 5, 10, 15, 20]:
-            laptime_model = ANN_regression_v1(input_size=250, num_layers=num_layers, hidden_size=50, act_fn='relu')
-            position_model = ANN_MC_v1(input_size=250, hidden_size=50, num_layers=num_layers, output_classes=20, act_fn='relu')
-            print('\n === Training model 2 === \n')
-            metrics_2 = train_model_v2(laptime_model=laptime_model, position_model=position_model,
+            for laptime_model_hidden_size, position_model_hidden_size in hidden_size_list:
+                print(f'num_layers: {num_layers} \t training hidden size: {laptime_model_hidden_size} , {position_model_hidden_size}')
+                laptime_model = ANN_regression_v1(input_size=124, input_num=2, num_layers=num_layers, hidden_size=laptime_model_hidden_size, act_fn='relu')
+                position_model = ANN_MC_v1(input_size=124, input_num=2, hidden_size=position_model_hidden_size, num_layers=num_layers, output_classes=20, act_fn='relu')
+                metrics_2 = train_model_v2(laptime_model=laptime_model, position_model=position_model,
+                                        train_dataset=train_dataset, val_dataset=val_dataset,
+                                        laptime_optimiser='adam', position_optimiser='adam',
+                                        verbose_every=30, num_epochs=1, batch_size=64, lr=1e-5, weight_decay=0.001,
+                                        VERBOSE=True, device=device)
+                all_metrics.append(metrics_2)
+        
+        for laptime_model_emb_size, position_model_emb_size in hidden_size_list:
+            print(f'training emb size: {laptime_model_emb_size} , {position_model_emb_size}')
+            laptime_model = ANN_regression_v2(input_size=124, input_num=2, emb_size=laptime_model_emb_size, hidden_sizes=[int(laptime_model_emb_size/2), int(laptime_model_emb_size/4)], act_fn='relu')
+            position_model = ANN_MC_v2(input_size=124, input_num=2, emb_size=position_model_emb_size, hidden_sizes=[int(position_model_emb_size/2), int(position_model_emb_size/4)], output_classes=20, act_fn='relu')
+            metrics_3 = train_model_v2(laptime_model=laptime_model, position_model=position_model,
                                     train_dataset=train_dataset, val_dataset=val_dataset,
                                     laptime_optimiser='adam', position_optimiser='adam',
-                                    verbose_every=100, num_epochs=10, batch_size=32, lr=1e-5, weight_decay=0.001,
+                                    verbose_every=30, num_epochs=1, batch_size=64, lr=1e-5, weight_decay=0.001,
                                     VERBOSE=True, device=device)
-            all_metrics.append(metrics_2)
+            all_metrics.append(metrics_3)
 
     # to create new metrics file
     json_write(all_metrics, 'obs/train_metrics.json')
