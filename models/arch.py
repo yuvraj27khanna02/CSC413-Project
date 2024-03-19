@@ -63,35 +63,6 @@ class Loss_Model_v1(torch.nn.Module):
     
     def get_optimiser(self):
         return self.optimiser
-class Loss_Model_v1(torch.nn.Module):
-    """
-    Loss_Model_v1 class represents a custom loss model for a specific task.
-
-    This model takes two inputs, `loss_laptime` and `loss_position`, and applies linear transformations
-    to them using two linear layers (`w1` and `w2`). The output is the sum of the transformed inputs.
-
-    Attributes:
-        w1 (torch.nn.Linear): Linear layer for loss_laptime.
-        w2 (torch.nn.Linear): Linear layer for loss_position.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.w1 = torch.nn.Parameter(torch.tensor(1.0, requires_grad=True, dtype=torch.float))
-        self.w2 = torch.nn.Parameter(torch.tensor(5000.0, requires_grad=True, dtype=torch.float))
-
-    def forward(self, loss_laptime, loss_position):
-        """ Forward pass of the Loss_Model_v1.
-
-        Args:
-            loss_laptime (torch.Tensor): Input tensor 0D representing the loss for laptime.
-            loss_position (torch.Tensor): Input tensor 0D representing the loss for position.
-        """
-        out = (self.w1 * loss_laptime) + (self.w2 * loss_position)
-        return out
-    
-    def get_optimiser(self):
-        return self.optimiser
 
 class MLP_BC_v1(torch.nn.Module):
     """ Multilayer Perceptron for Binary Classification version 1
@@ -148,18 +119,13 @@ class MLP_MC_v1(torch.nn.Module):
         super().__init__()
         self.fc_1 = torch.nn.Linear(data_dim, hidden_size)
         self.fc_n = torch.nn.Linear(hidden_size*2, output_classes)
-        self.fc_1 = torch.nn.Linear(data_dim, hidden_size)
-        self.fc_n = torch.nn.Linear(hidden_size*2, output_classes)
         self.act_fn = _get_act_fn(act_fn)
-        self.softmax_ = torch.nn.Softmax(dim=1)
         self.data_dim = data_dim
     
     def forward(self, input):
         input_list = torch.split(input, self.data_dim, 1)
         x = torch.cat([self.act_fn(self.fc_1(i)) for i in input_list], 1)
-        input_list = torch.split(input, self.data_dim, 1)
-        x = torch.cat([self.act_fn(self.fc_1(i)) for i in input_list], 1)
-        out = self.softmax_(self.fc_n(x))
+        out = self.fc_n(x)
         return out
     
     def get_inputsize(self):
@@ -296,7 +262,6 @@ class ANN_MC_v1(torch.nn.Module):
         self.fc_layers = torch.nn.ModuleList([torch.nn.Linear(hidden_size, hidden_size) for _ in range(num_layers)])
         self.fc_n = torch.nn.Linear(hidden_size, output_classes)
         self.act_fn = _get_act_fn(act_fn)
-        self.softmax_ = torch.nn.Softmax(dim=1)
     
     def forward(self, input):
         """
@@ -314,7 +279,7 @@ class ANN_MC_v1(torch.nn.Module):
         x = self.act_fn(self.fc_2(x))
         for fc_layer in self.fc_layers:
             x = self.act_fn(fc_layer(x))
-        out = self.softmax_(self.fc_n(x))
+        out = self.fc_n(x)
         return out
     
     def get_inputsize(self):
@@ -322,7 +287,7 @@ class ANN_MC_v1(torch.nn.Module):
 
 class ANN_MC_v2(torch.nn.Module):
     """
-    A class representing a multi-layer perceptron (MLP) with softmax activation for multi-class classification.
+    A class representing a multi-layer perceptron (MLP) for multi-class classification.
 
     Args:
         input_size (int): The size of the input features.
@@ -332,7 +297,6 @@ class ANN_MC_v2(torch.nn.Module):
 
     Attributes:
         act_fn (function): The activation function used in the hidden layers.
-        softmax_ (torch.nn.Softmax): The softmax activation function used for the final output.
         fc_layers (torch.nn.ModuleList): A list of fully connected layers.
         fc_n (torch.nn.Linear): The final fully connected layer.
     """
@@ -340,7 +304,6 @@ class ANN_MC_v2(torch.nn.Module):
     def __init__(self, input_size=int, input_num=int, emb_size=int, hidden_sizes=list, act_fn=str, output_classes=int) -> None:
         super().__init__()
         self.act_fn = _get_act_fn(act_fn)
-        self.softmax_ = torch.nn.Softmax(dim=1)
         self.fc_1 = torch.nn.Linear(input_size, emb_size)
         self.fc_layers = torch.nn.ModuleList()
         prev = emb_size*input_num
@@ -358,7 +321,7 @@ class ANN_MC_v2(torch.nn.Module):
         x = torch.cat([self.act_fn(self.fc_1(i)) for i in x], 1)
         for fc_layer in self.fc_layers:
             x = self.act_fn(fc_layer(x))
-        out = self.softmax_(self.fc_n(x))
+        out = self.fc_n(x)
         return out
     
     def get_inputsize(self):
@@ -379,7 +342,6 @@ class ANN_MO_v1_1(torch.nn.Module):
         fc_layers (torch.nn.ModuleList): A list of fully connected layers for predicting outputs.
         fc_n (torch.nn.ModuleList): A list of output layers from the hidden layers.
         act_fn (function): The activation function used in the hidden layers.
-        softmax_ (torch.nn.Softmax): The softmax function used for outputs with more than one class.
 
     """
 
@@ -403,7 +365,6 @@ class ANN_MO_v1_1(torch.nn.Module):
             self.fc_n.append(torch.nn.Linear(last_size, output))
 
         self.act_fn = _get_act_fn(act_fn)
-        self.softmax_ = torch.nn.Softmax(dim=1)
         self.input_size = input_size
     
     def forward(self, input):
@@ -417,7 +378,7 @@ class ANN_MO_v1_1(torch.nn.Module):
             if output == 1:
                 out = torch.cat((out, self.fc_n[i](x)), dim=1)
             else:
-                out = torch.cat((out, self.softmax_(self.fc_n[i](x))), dim=1)
+                out = torch.cat((out, self.fc_n[i](x)), dim=1)
         
         return out
     
@@ -440,7 +401,6 @@ class ANN_MO_v1_2(torch.nn.Module):
         fc_1 (torch.nn.Linear): The first fully connected layer.
         fc_outputs (torch.nn.ModuleList): A list of fully connected layers for each output.
         act_fn (function): The activation function.
-        softmax_ (torch.nn.Softmax): The softmax function.
 
     """
 
@@ -461,7 +421,6 @@ class ANN_MO_v1_2(torch.nn.Module):
             self.fc_outputs.append(fc_layer_output)
         
         self.act_fn = _get_act_fn(act_fn)
-        self.softmax_ = torch.nn.Softmax(dim=1)
     
     def forward(self, input):
         x = self.fc_1(input)
@@ -476,7 +435,7 @@ class ANN_MO_v1_2(torch.nn.Module):
             if output == 1:
                 out = torch.cat((out, x_i), dim=1)
             else:
-                out = torch.cat((out, self.softmax_(x_i)), dim=1)
+                out = torch.cat((out, x_i), dim=1)
 
         return out
     
@@ -521,7 +480,6 @@ class RNN_MC_v1(torch.nn.Module):
         self.rnn = torch.nn.RNN(emb_size, hidden_size, batch_first=True)
         self.fc_n = torch.nn.Linear(hidden_size, output_classes)
         self.act_fn = _get_act_fn(act_fn)
-        self.softmax_ = torch.nn.Softmax(dim=1)
 
         # hidden tensor initiated to 0
         self.hidden_tensor = torch.zeros(hidden_size, hidden_size)

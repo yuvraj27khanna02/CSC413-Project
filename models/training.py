@@ -117,8 +117,13 @@ def get_position_accuracy_v2(dataset, position_model, device):
         t_position = t_position.to(device)
 
         y_position = position_model(X)
-        total_correct += int(torch.sum(y_position == t_position))
-        total_count += t_position.shape[0]
+
+        _, y_classes = torch.max(y_position, 1)
+        _, t_classes = torch.max(t_position, 1)
+
+        total_correct += (y_classes == t_classes).sum().item()
+        total_count += t_position.size(0)
+
     return total_correct / total_count
 
 def get_data(n=3, train_split=0.6, val_split=0.2, data_dim=int,
@@ -307,6 +312,7 @@ def train_model_v2(laptime_model: MLP_regression_v1,
             t_laptime = t_laptime.to(device, dtype=datatype)
             t_position = t_position.to(device, dtype=datatype)
             t_laptime = t_laptime.view(-1, 1)
+            _, t_position_indices = torch.max(t_position, dim=1)
             # Training model
             laptime_model.train()
             position_model.train()
@@ -314,7 +320,7 @@ def train_model_v2(laptime_model: MLP_regression_v1,
             y_laptime = laptime_model(X)
             y_position = position_model(X)
             loss_laptime = criterion_laptime(y_laptime, t_laptime)
-            loss_position = criterion_position(y_position, t_position)
+            loss_position = criterion_position(y_position, t_position_indices)
             # Backward pass
             loss_laptime.backward()
             laptime_optimiser.step()
@@ -479,7 +485,7 @@ if __name__ == "__main__":
                 all_metrics.append(ann_v1_metrics)
 
     # to create new metrics file
-    json_write(all_metrics, 'obs/train_metrics.json')
+    json_write(all_metrics, 'train_metrics.json')
 
     print(f"\n \t === Training complete === \n"
           f"total time: {datetime.now() - train_begin_time} \t metrics count: {len(all_metrics)} \n")
