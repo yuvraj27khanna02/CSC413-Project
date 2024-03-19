@@ -4,6 +4,7 @@ from arch import *
 from data_preprocessing import load_data
 import json
 from datetime import datetime
+from race_lap_ngrams import RaceLapNgrams
 
 def json_write(data, filepath):
     with open(filepath, 'w') as f:
@@ -88,12 +89,14 @@ def get_position_accuracy(dataset:torch.utils.data.TensorDataset, model:torch.nn
         total_count += t_position.shape[0]
     return total_correct / total_count
 
-def get_laptime_accuracy_v2(dataset, laptime_model):
+def get_laptime_accuracy_v2(dataset, laptime_model, race_lap_ngrams: RaceLapNgrams):
     total_mae = 0
     total_mse = 0
     total_rmse = 0
     total_count = 0
-    for (X, t_laptime, _) in dataset:
+    for indices in dataset:
+        X, t_laptime, _ = race_lap_ngrams.get_tensors(indices)
+
         t_laptime = t_laptime.view(-1, 1)
         y_laptime = laptime_model(X)
         mae_accuracy = torch.mean(torch.abs(y_laptime - t_laptime))
@@ -105,10 +108,12 @@ def get_laptime_accuracy_v2(dataset, laptime_model):
         total_count += 1
     return total_mae / total_count, total_mse / total_count, total_rmse / total_count
 
-def get_position_accuracy_v2(dataset, position_model):
+def get_position_accuracy_v2(dataset, position_model, race_lap_ngrams: RaceLapNgrams):
     total_correct = 0
     total_count = 0
-    for (X, _, t_position) in dataset:
+    for indices in dataset:
+        X, _, t_position = race_lap_ngrams.get_tensors(indices)
+
         y_position = position_model(X)
         total_correct += int(torch.sum(y_position == t_position))
         total_count += t_position.shape[0]
@@ -241,8 +246,7 @@ def train_model(model:ANN_MIMO_v2,
 
 def train_model_v2(laptime_model: MLP_regression_v1,
                    position_model: MLP_MC_v1,
-                   train_dataset,
-                   val_dataset,
+                   race_lap_ngrams: RaceLapNgrams,
                    num_epochs=10,
                    verbose_every=10,
                    criterion_laptime=torch.nn.MSELoss(),
@@ -259,11 +263,12 @@ def train_model_v2(laptime_model: MLP_regression_v1,
     if VERBOSE:
         print(f"Training on {device}")
 
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
+    train_dataloader = torch.utils.data.DataLoader(race_lap_ngrams.train_indices, batch_size=batch_size, shuffle=True)
+    val_dataloader = torch.utils.data.DataLoader(race_lap_ngrams.val_indices, batch_size=batch_size, shuffle=True)
 
     if VERBOSE:
-        X, t_lt, t_p = next(iter(train_dataloader))
+        indices = next(iter(train_dataloader))
+        X, t_lt, t_p = race_lap_ngrams.get_tensors(indices)
         print(f"X={X.shape} \t t_laptime={t_lt.shape} \t t_position={t_p.shape}")
         print(f"X device:{X.device} \t t_laptime device:{t_lt.device} \t t_position device:{t_p.device}")
     
@@ -294,7 +299,8 @@ def train_model_v2(laptime_model: MLP_regression_v1,
 
         prev_itr_time = datetime.now()
 
-        for (X, t_laptime, t_position) in train_dataloader:
+        for indices in train_dataloader:
+            X, t_laptime, t_position = race_lap_ngrams.get_tensors(indices)
 
             # Format data
             X = X.to(device, dtype=datatype)
@@ -322,10 +328,10 @@ def train_model_v2(laptime_model: MLP_regression_v1,
                 laptime_model.eval()
                 position_model.eval()
 
-                train_laptime_mae, train_laptime_mse, train_laptime_rmse = get_laptime_accuracy_v2(train_dataloader, laptime_model)
-                val_laptime_mae, val_laptime_mse, val_laptime_rmse = get_laptime_accuracy_v2(val_dataloader, laptime_model)
-                train_position_accuracy = get_position_accuracy_v2(train_dataloader, position_model)
-                val_position_accuracy = get_position_accuracy_v2(train_dataloader, position_model)
+                train_laptime_mae, train_laptime_mse, train_laptime_rmse = get_laptime_accuracy_v2(train_dataloader, laptime_model, race_lap_ngrams)
+                val_laptime_mae, val_laptime_mse, val_laptime_rmse = get_laptime_accuracy_v2(val_dataloader, laptime_model, race_lap_ngrams)
+                train_position_accuracy = get_position_accuracy_v2(train_dataloader, position_model, race_lap_ngrams)
+                val_position_accuracy = get_position_accuracy_v2(val_dataloader, position_model, race_lap_ngrams)
 
             train_acc_laptime_list.append({
                 'mae': train_laptime_mae.item(),
@@ -385,8 +391,8 @@ def train_model_v2(laptime_model: MLP_regression_v1,
             'position_model_summary': str(get_model_summary(position_model))            
         },
         'data_info': {
-            'train_size': len(train_dataset),
-            'val_size': len(val_dataset),
+            'train_size': len(race_lap_ngrams.train_indices),
+            'val_size': len(race_lap_ngrams.val_indices),
             'input_shape': X.size(),
             'laptime_shape': t_laptime.size(),
             'position_shape': t_position.size(),
@@ -425,10 +431,11 @@ if __name__ == "__main__":
 
     all_metrics = []
 
+    race_lap_ngrams = RaceLapNgrams(n=3)
+    race_lap_ngrams.split_by_proportion()
+    
     device = torch.device('cpu')
-    data_dim = 126
-
-    train_dataset, val_dataset, test_dataset = get_data(n=3, small_data=True, data_dim=data_dim, VERBOSE=True, device=device)
+    data_dim = race_lap_ngrams.data_dim
 
     hidden_size_list = [(10, 30), (20, 50), (30, 50), (50, 50)]
     num_layers_list = [2, 3, 5, 10, 15, 20]
@@ -442,7 +449,7 @@ if __name__ == "__main__":
             laptime_model = MLP_regression_v1(hidden_size=laptime_model_hidden_size, act_fn='relu', data_dim=data_dim)
             position_model = MLP_MC_v1(hidden_size=50, output_classes=20, act_fn='relu', data_dim=data_dim)
             mlp_metrics = train_model_v2(laptime_model=laptime_model, position_model=position_model,
-                                    train_dataset=train_dataset, val_dataset=val_dataset,
+                                    race_lap_ngrams=race_lap_ngrams,
                                     laptime_optimiser='adam', position_optimiser='adam',
                                     verbose_every=30, num_epochs=1, batch_size=64, lr=lr, weight_decay=0.001,
                                     VERBOSE=True, device=device)
@@ -451,7 +458,7 @@ if __name__ == "__main__":
             laptime_model = ANN_regression_v2(input_size=data_dim, input_num=2, emb_size=laptime_model_hidden_size, hidden_sizes=[int(laptime_model_hidden_size/2), int(laptime_model_hidden_size/4)], act_fn='relu')
             position_model = ANN_MC_v2(input_size=data_dim, input_num=2, emb_size=position_model_hidden_size, hidden_sizes=[int(position_model_hidden_size/2), int(position_model_hidden_size/4)], output_classes=20, act_fn='relu')
             ann_v2_metrics = train_model_v2(laptime_model=laptime_model, position_model=position_model,
-                                    train_dataset=train_dataset, val_dataset=val_dataset,
+                                    race_lap_ngrams=race_lap_ngrams,
                                     laptime_optimiser='adam', position_optimiser='adam',
                                     verbose_every=30, num_epochs=1, batch_size=64, lr=lr, weight_decay=0.001,
                                     VERBOSE=True, device=device)
@@ -462,7 +469,7 @@ if __name__ == "__main__":
                 laptime_model = ANN_regression_v1(input_size=data_dim, input_num=2, num_layers=num_layers, hidden_size=laptime_model_hidden_size, act_fn='relu')
                 position_model = ANN_MC_v1(input_size=data_dim, input_num=2, hidden_size=position_model_hidden_size, num_layers=num_layers, output_classes=20, act_fn='relu')
                 ann_v1_metrics = train_model_v2(laptime_model=laptime_model, position_model=position_model,
-                                        train_dataset=train_dataset, val_dataset=val_dataset,
+                                        race_lap_ngrams=race_lap_ngrams,
                                         laptime_optimiser='adam', position_optimiser='adam',
                                         verbose_every=30, num_epochs=1, batch_size=64, lr=lr, weight_decay=0.001,
                                         VERBOSE=True, device=device)
