@@ -91,18 +91,14 @@ class MLP_regression_v1(torch.nn.Module):
     """ MultiLayer Perceptron for Regression version 1
     """
 
-    def __init__(self, hidden_size=int, act_fn=str, data_dim=int) -> None:
+    def __init__(self, hidden_size=int, act_fn=str, data_dim=int, input_num=int) -> None:
         super().__init__()
         self.fc_1 = torch.nn.Linear(data_dim, hidden_size)
-        self.fc_n = torch.nn.Linear(hidden_size*2, 1)
-        self.fc_1 = torch.nn.Linear(data_dim, hidden_size)
-        self.fc_n = torch.nn.Linear(hidden_size*2, 1)
+        self.fc_n = torch.nn.Linear(hidden_size*input_num, 1)
         self.act_fn = _get_act_fn(act_fn)
         self.data_dim = data_dim
     
     def forward(self, input):
-        input_list = torch.split(input, self.data_dim, 1)
-        x = torch.cat([self.act_fn(self.fc_1(i)) for i in input_list], dim=1)
         input_list = torch.split(input, self.data_dim, 1)
         x = torch.cat([self.act_fn(self.fc_1(i)) for i in input_list], dim=1)
         out = self.fc_n(x)
@@ -115,10 +111,10 @@ class MLP_MC_v1(torch.nn.Module):
     """ Multilayer Perceptron for Multiclass Classification version 1
     """
 
-    def __init__(self, input_size=int, hidden_size=int, output_classes=int, act_fn=str, data_dim=int) -> None:
+    def __init__(self, input_num=int, hidden_size=int, output_classes=int, act_fn=str, data_dim=int) -> None:
         super().__init__()
         self.fc_1 = torch.nn.Linear(data_dim, hidden_size)
-        self.fc_n = torch.nn.Linear(hidden_size*2, output_classes)
+        self.fc_n = torch.nn.Linear(hidden_size*input_num, output_classes)
         self.act_fn = _get_act_fn(act_fn)
         self.data_dim = data_dim
     
