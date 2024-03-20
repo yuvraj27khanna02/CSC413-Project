@@ -5,6 +5,8 @@ import sys
 import io
 import os
 
+os.environ['device'] = 'cpu'
+
 def _get_act_fn(act_fn=str):
     """ act_fn list: ['relu', 'sig', 'tanh']
     """
@@ -18,8 +20,10 @@ def _get_act_fn(act_fn=str):
 def get_model_summary(model, batch_size=1):
     old_stdout = sys.stdout
     sys.stdout = io.StringIO()
-    summary(model=model, input_size=(model.get_inputsize(),), batch_size=batch_size)
-    summary(model=model, input_size=(model.get_inputsize(),), batch_size=batch_size)
+    try:
+        summary(model=model, input_size=(model.get_inputsize(),), batch_size=batch_size)
+    except Exception as e:
+        print(f'\t Error : {e}')
     a = sys.stdout.getvalue()
     sys.stdout = old_stdout
     return a
@@ -493,15 +497,53 @@ class RNN_MC_v1(torch.nn.Module):
     
 class LSTM_regression_v1(torch.nn.Module):
 
-    def __init__(self) -> None:
+    def __init__(self, input_size=int, hidden_size=int, num_stacked_layres=int, act_fn=str) -> None:
         super().__init__()
-        raise NotImplementedError
+
+        self.hidden_size = hidden_size
+        self.num_stacked_layres = num_stacked_layres
+        self.act_fn = _get_act_fn(act_fn)
+        self.input_size = input_size
+
+        self.lstm = torch.nn.LSTM(input_size, hidden_size, num_stacked_layres, batch_first=True)
+        self.fc_n = torch.nn.Linear(hidden_size, 1)
+    
+    def forward(self, x):
+        batch_size = x.size(0)
+        h0 = torch.zeros(self.num_stacked_layres, batch_size, self.hidden_size).to(torch.device(os.environ['device']))
+        c0 = torch.zeros(self.num_stacked_layres, batch_size, self.hidden_size).to(torch.device(os.environ['device']))
+
+        out, hidden = self.lstm(x, (h0, c0))
+        out = self.fc_n(out[:, -1, :])
+        return out, hidden
+    
+    def get_inputsize(self):
+        return self.input_size
 
 class LSTM_MC_v1(torch.nn.Module):
 
-    def __init__(self) -> None:
+    def __init__(self, input_size=int, hidden_size=int, num_stacked_layres=int, output_classes=int, act_fn=str) -> None:
         super().__init__()
-        raise NotImplementedError
+
+        self.hidden_size = hidden_size
+        self.num_stacked_layres = num_stacked_layres
+        self.act_fn = _get_act_fn(act_fn)
+        self.input_size = input_size
+
+        self.lstm = torch.nn.LSTM(input_size, hidden_size, num_stacked_layres, batch_first=True)
+        self.fc_n = torch.nn.Linear(hidden_size, output_classes)
+
+    def forward(self, x):
+        batch_size = x.size(0)
+        h0 = torch.zeros(self.num_stacked_layres, batch_size, self.hidden_size).to(torch.device(os.environ['device']))
+        c0 = torch.zeros(self.num_stacked_layres, batch_size, self.hidden_size).to(torch.device(os.environ['device']))
+
+        out, hidden = self.lstm(x, (h0, c0))
+        out = self.fc_n(out[:, -1, :])
+        return out, hidden
+    
+    def get_inputsize(self):
+        return self.input_size
 
 class ANN_MIMO_v2(torch.nn.Module):
     """ ANN for multiple input and 2 outputs of regression (laptime) and classification (20 positions)
@@ -542,17 +584,23 @@ if __name__ == "__main__":
 
     # testing model summary to write to file
 
-    model1 = ANN_MO_v1_2(input_size=10, hidden_first=20, outputs=[1, 20], hidden_dims=[10, 50], act_fn='relu')
-    a = get_model_summary(model1)
-    model2 = ANN_MO_v1_2(input_size=10, hidden_first=20, outputs=[1, 10], hidden_dims=[10, 50], act_fn='sig')
-    a += get_model_summary(model2)
-    print('hello world!')
-    model3 = ANN_MIMO_v2(input_num=20, input_size=500, hidden_dim=200, emb_dim=50, hidden_output_list=[5, 30], act_fn='relu')
-    a += get_model_summary(model3)
-    write_to_file('model_summary_1.txt', a)
+    # model1 = ANN_MO_v1_2(input_size=10, hidden_first=20, outputs=[1, 20], hidden_dims=[10, 50], act_fn='relu')
+    # a = get_model_summary(model1)
+    # model2 = ANN_MO_v1_2(input_size=10, hidden_first=20, outputs=[1, 10], hidden_dims=[10, 50], act_fn='sig')
+    # a += get_model_summary(model2)
+    # print('hello world!')
+    # model3 = ANN_MIMO_v2(input_num=20, input_size=500, hidden_dim=200, emb_dim=50, hidden_output_list=[5, 30], act_fn='relu')
+    # a += get_model_summary(model3)
+    # write_to_file('model_summary_1.txt', a)
 
-    # laptime_model_end = MLP_regression_v1(input_size=125, hidden_size=20, act_fn='relu')
-    # position_model_end = MLP_MC_v1(input_size=125, hidden_size=50, output_classes=20, act_fn='relu')
-
+    model_lstm_reg = LSTM_regression_v1(input_size=10, hidden_size=20, num_stacked_layres=2, act_fn='relu')
+    a = get_model_summary(model_lstm_reg)
+    a += '\n NEXT MODEL\n\n'
+    model_lstm_mc = LSTM_MC_v1(input_size=10, hidden_size=20, num_stacked_layres=2, output_classes=20, act_fn='relu')
+    a += get_model_summary(model_lstm_mc)
+    a += '\nNEXT MODEL\n\n'
+    model = LSTM_regression_v1(1, 4, 1)
+    a += get_model_summary(model)
+    write_to_file('delete_this.txt')
 
     pass
