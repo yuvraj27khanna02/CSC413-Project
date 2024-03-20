@@ -489,7 +489,7 @@ if __name__ == "__main__":
                 all_metrics.append(ann_v1_metrics)
 
     # to create new metrics file
-    json_update(all_metrics, 'train_metrics.json')
+    json_write(all_metrics, 'train_metrics.json')
 
     print(f"\n \t === Training complete === \n"
           f"total time: {datetime.now() - train_begin_time} \t metrics count: {len(all_metrics)} \n")
