@@ -411,7 +411,9 @@ def train_model_v2(laptime_model: MLP_regression_v1,
             'weight_decay': weight_decay,
             'dropout': None,
             'laptime_optimiser': str(laptime_optimiser),
-            'position_optimiser': str(position_optimiser)
+            'position_optimiser': str(position_optimiser),
+            'laptime_loss_criterion': str(criterion_laptime),
+            'position_loss_criterion': str(criterion_position),
         },
         'metrics': {
             'epoch_list': epoch_list,
@@ -466,61 +468,60 @@ def train_model_lstm(laptime_model: LSTM_regression_v1, position_model:LSTM_MC_v
 
 
 if __name__ == "__main__":
-
-    
     device = torch.device('cpu')
-    FILE_TO_STORE_METRICS = 'train_metrics_.json'
+    FILE_TO_STORE_METRICS = 'train_metrics_1.json'
     json_write([], FILE_TO_STORE_METRICS)
 
     train_begin_time = datetime.now()
 
-    n = 12
-    input_num = n-1
-
-    race_lap_ngrams = RaceLapNgrams(n=n)
-    race_lap_ngrams.split_by_proportion()
-    data_dim = race_lap_ngrams.data_dim
-
-    train_dataset = torch.utils.data.TensorDataset(*race_lap_ngrams.get_train_tensors())
-    val_dataset = torch.utils.data.TensorDataset(*race_lap_ngrams.get_val_tensors())
-    test_dataset = torch.utils.data.TensorDataset(*race_lap_ngrams.get_test_tensors())
-
-    print(f"train size: {len(train_dataset)} \t val size: {len(val_dataset)} \t test size: {len(test_dataset)}")
-
     batchsize = 512
     num_epochs = 1
     verbose_every = 10
-    hidden_size_list = [(15, 15)]
-    num_layers_list = [15]
-    lr_list = [9e-5]
+    n_list = [2, 5]
+    hidden_size_list = [(20, 20)]
+    num_layers_list = [30]
+    lr_list = [1e-5]
 
     try:
-        for laptime_model_hidden_size, position_model_hidden_size in hidden_size_list:
-            for lr in lr_list:
-                for num_layers in num_layers_list:
-                    print(f'\t {border_break} \nANN v1 \t input_num: {input_num} \t lr: {lr} \t laptime_hidden_size: {laptime_model_hidden_size} \t position_hidden_size: {position_model_hidden_size}')
-                    laptime_model = ANN_regression_v1(input_size=data_dim, input_num=input_num, num_layers=num_layers, hidden_size=laptime_model_hidden_size, act_fn='relu')
-                    position_model = ANN_MC_v1(input_size=data_dim, input_num=input_num, hidden_size=position_model_hidden_size, num_layers=num_layers, output_classes=20, act_fn='relu')
-                    ann_v1_metrics = train_model_v2(laptime_model=laptime_model, position_model=position_model,
-                                            train_dataset=train_dataset, val_dataset=val_dataset,
-                                            laptime_optimiser='adam', position_optimiser='adam', num_epochs=num_epochs,
-                                            verbose_every=verbose_every, batch_size=batchsize, lr=lr, weight_decay=0,
-                                            VERBOSE=True, device=device)
-                    ann_v1_metrics['data_info'] = {
-                        'train_size': len(train_dataset),
-                        'val_size': len(val_dataset),
-                        'input_shape': train_dataset.tensors[0].size(),
-                        'laptime_shape': train_dataset.tensors[1].size(),
-                        'position_shape': train_dataset.tensors[2].size(),
-                    }
-                    ann_v1_metrics['hyperparameters']['n'] = n
-                    ann_v1_metrics['hyperparameters']['input_num'] = input_num
-                    ann_v1_metrics['hyperparameters']['laptime_hidden_size'] = laptime_model_hidden_size
-                    ann_v1_metrics['hyperparameters']['position_hidden_size'] = position_model_hidden_size
-                    ann_v1_metrics['hyperparameters']['num_layers'] = num_layers
-                    ann_v1_metrics['hyperparameters']['data_dim'] = data_dim
+        for n in n_list:
+            input_num = n-1
 
-                    json_update(ann_v1_metrics, FILE_TO_STORE_METRICS)
+            race_lap_ngrams = RaceLapNgrams(n=n, small=True)
+            race_lap_ngrams.split_by_year()
+            data_dim = race_lap_ngrams.data_dim
+
+            train_dataset = torch.utils.data.TensorDataset(*race_lap_ngrams.get_train_tensors())
+            val_dataset = torch.utils.data.TensorDataset(*race_lap_ngrams.get_val_tensors())
+            test_dataset = torch.utils.data.TensorDataset(*race_lap_ngrams.get_test_tensors())
+
+            print(f"train size: {len(train_dataset)} \t val size: {len(val_dataset)} \t test size: {len(test_dataset)}")
+
+            for laptime_model_hidden_size, position_model_hidden_size in hidden_size_list:
+                for lr in lr_list:
+                    for num_layers in num_layers_list:
+                        print(f'\t {border_break} \nANN v1 \t num_layers: {num_layers} \t lr: {lr} \t laptime_hidden_size: {laptime_model_hidden_size} \t position_hidden_size: {position_model_hidden_size}')
+                        laptime_model = ANN_regression_v1(input_size=data_dim, input_num=input_num, num_layers=num_layers, hidden_size=laptime_model_hidden_size, act_fn='relu')
+                        position_model = ANN_MC_v1(input_size=data_dim, input_num=input_num, hidden_size=position_model_hidden_size, num_layers=num_layers, output_classes=20, act_fn='relu')
+                        ann_v1_metrics = train_model_v2(laptime_model=laptime_model, position_model=position_model,
+                                                train_dataset=train_dataset, val_dataset=val_dataset,
+                                                laptime_optimiser='adam', position_optimiser='adam', num_epochs=num_epochs,
+                                                verbose_every=verbose_every, batch_size=batchsize, lr=lr, weight_decay=0,
+                                                VERBOSE=True, device=device)
+                        ann_v1_metrics['data_info'] = {
+                            'train_size': len(train_dataset),
+                            'val_size': len(val_dataset),
+                            'input_shape': train_dataset.tensors[0].size(),
+                            'laptime_shape': train_dataset.tensors[1].size(),
+                            'position_shape': train_dataset.tensors[2].size(),
+                        }
+                        ann_v1_metrics['hyperparameters']['n'] = n
+                        ann_v1_metrics['hyperparameters']['input_num'] = input_num
+                        ann_v1_metrics['hyperparameters']['laptime_hidden_size'] = laptime_model_hidden_size
+                        ann_v1_metrics['hyperparameters']['position_hidden_size'] = position_model_hidden_size
+                        ann_v1_metrics['hyperparameters']['num_layers'] = num_layers
+                        ann_v1_metrics['hyperparameters']['data_dim'] = data_dim
+
+                        json_update(ann_v1_metrics, FILE_TO_STORE_METRICS)
     
     except Exception as e:
 

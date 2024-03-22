@@ -19,7 +19,10 @@ class RaceLapNgrams:
     val_indices = []
     test_indices = []
 
-    def __init__(self, n, processed_data_path = PROCESSED_DATA_PATH):
+    small = False
+
+    def __init__(self, n, processed_data_path = PROCESSED_DATA_PATH, small = False):
+        self.small = small
         self.orig_df = pd.read_csv(processed_data_path).iloc[:, 1:]
         self.orig_df.sort_values(
             by=['Year', 'Event_Orig', 'Driver_Orig', 'LapNumber'],
@@ -42,11 +45,11 @@ class RaceLapNgrams:
 
                 lap_numbers = potential_ngram['LapNumber']
                 min_lap_number = lap_numbers.min()
-                if lap_numbers.tolist() == list(range(min_lap_number, min_lap_number + n)):
+                if lap_numbers.to_list() == list(range(min_lap_number, min_lap_number + n)):
                     self.ngram_indices.append(i)
 
     def split_by_year(self):
-        train_years = [2019, 2020, 2021]
+        train_years = [2019] if self.small else [2019, 2020, 2021]
         val_years = [2022]
         test_years = [2023]
 
@@ -76,8 +79,6 @@ class RaceLapNgrams:
         return self.get_tensors(self.test_indices)
 
     def get_tensors(self, indices):
-        indices = indices.tolist()
-
         ngrams = [self.df.iloc[i:i+self.n] for i in indices]
         data_tensor = torch.tensor(np.array([ngram.values.flatten() for ngram in ngrams]), dtype=torch.float32)
 
