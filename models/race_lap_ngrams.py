@@ -55,9 +55,9 @@ class RaceLapNgrams:
 
         ngram_subset = self.orig_df.iloc[self.ngram_indices]
         
-        self.train_indices = ngram_subset[ngram_subset['Year'].isin(train_years)].index.to_list()
-        self.val_indices = ngram_subset[ngram_subset['Year'].isin(val_years)].index.to_list()
-        self.test_indices = ngram_subset[ngram_subset['Year'].isin(test_years)].index.to_list()
+        self.train_indices = ngram_subset[ngram_subset['Year'].isin(train_years)].index.tolist()
+        self.val_indices = ngram_subset[ngram_subset['Year'].isin(val_years)].index.tolist()
+        self.test_indices = ngram_subset[ngram_subset['Year'].isin(test_years)].index.tolist()
 
     def split_by_proportion(self, train_proportion = 0.6, val_proportion = 0.2):
         shuffled_indices = np.random.permutation(self.ngram_indices)
@@ -65,9 +65,9 @@ class RaceLapNgrams:
         train_split = int(len(self.ngram_indices) * train_proportion)
         val_split = int(len(self.ngram_indices) * val_proportion)
 
-        self.train_indices = shuffled_indices[:train_split]
-        self.val_indices = shuffled_indices[train_split:train_split + val_split]
-        self.test_indices = shuffled_indices[train_split + val_split:]
+        self.train_indices = shuffled_indices[:train_split].tolist()
+        self.val_indices = shuffled_indices[train_split:train_split + val_split].tolist()
+        self.test_indices = shuffled_indices[train_split + val_split:].tolist()
 
     def get_train_tensors(self):
         return self.get_tensors(self.train_indices)
