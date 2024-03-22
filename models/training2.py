@@ -302,6 +302,9 @@ def train_model_v2(laptime_model: MLP_regression_v1,
     train_start_time = datetime.now()
     prev_epoch_time = train_start_time
 
+    laptime_hidden = None
+    position_hidden = None
+
     for epoch in range(num_epochs):
 
         prev_itr_time = datetime.now()
@@ -318,8 +321,12 @@ def train_model_v2(laptime_model: MLP_regression_v1,
             laptime_model.train()
             position_model.train()
             # Forward pass
-            y_laptime = laptime_model(X)
-            y_position = position_model(X)
+            y_laptime, laptime_hidden = laptime_model(X, laptime_hidden)
+            y_position, position_hidden = position_model(X, position_hidden)
+
+            laptime_hidden = laptime_hidden.detach()            # what does this do?
+            position_hidden = position_hidden.data              # what does this do?
+
             loss_laptime = criterion_laptime(y_laptime, t_laptime)
             loss_position = criterion_position(y_position, t_position_indices)
             # Backward pass
@@ -437,7 +444,10 @@ if __name__ == "__main__":
 
     all_metrics = []
 
-    race_lap_ngrams = RaceLapNgrams(n=3)
+    n = 3
+    input_num = n-1
+
+    race_lap_ngrams = RaceLapNgrams(n=n)
     race_lap_ngrams.split_by_proportion()
 
     train_dataset = torch.utils.data.TensorDataset(*race_lap_ngrams.get_train_tensors())
@@ -447,21 +457,22 @@ if __name__ == "__main__":
     device = torch.device('cpu')
     data_dim = race_lap_ngrams.data_dim
 
-    hidden_size_list = [(10, 30), (20, 50), (30, 50), (50, 50)]
-    num_layers_list = [2, 3, 5, 10, 15, 20]
-    lr_list = [1e-3, 1e-2]
+    hidden_size_list = [(15, 15), (25, 25)]
+    num_layers_list = [2, 10]
+    # lr_list = [1e-5]
+    lr = 1e-5
 
     for laptime_model_hidden_size, position_model_hidden_size in hidden_size_list:
         print(f'\n \t === training hidden size: {laptime_model_hidden_size} , {position_model_hidden_size} ===')
-        for lr in lr_list:
-            print(f'\n \t === lr: {lr} ===')
-            
-            laptime_model = RNN_regression_v2(input_size=data_dim, input_num=2, emb_size=laptime_model_hidden_size, hidden_sizes=[int(laptime_model_hidden_size/2), int(laptime_model_hidden_size/4)], act_fn='relu')
-            position_model = RNN_MC_v2(input_size=data_dim, input_num=2, emb_size=position_model_hidden_size, hidden_sizes=[int(position_model_hidden_size/2), int(position_model_hidden_size/4)], output_classes=20, act_fn='relu')
+        for num_layer in num_layers_list:
+            print(f'\n \t === lr: {num_layers_list} \t num_layers: {num_layer} \t training hidden size: {laptime_model_hidden_size} , {position_model_hidden_size} ======')
+
+            laptime_model = RNN_regression_v1(input_size=data_dim, input_num=input_num, emb_size=laptime_model_hidden_size, num_layers=num_layer, hidden_size=laptime_model_hidden_size, act_fn='relu')
+            position_model = RNN_MC_v1(input_size=data_dim, input_num=input_num, emb_size=position_model_hidden_size, hidden_size=position_model_hidden_size, num_layers=num_layer, output_classes=20, act_fn='relu')
             rnn_v2_metrics = train_model_v2(laptime_model=laptime_model, position_model=position_model,
                                     train_dataset=train_dataset, val_dataset=val_dataset,
                                     laptime_optimiser='adam', position_optimiser='adam',
-                                    verbose_every=30, num_epochs=1, batch_size=64, lr=lr, weight_decay=0.001,
+                                    verbose_every=30, num_epochs=1, batch_size=64, lr=lr, weight_decay=0,
                                     VERBOSE=True, device=device)
             all_metrics.append(rnn_v2_metrics)
 
