@@ -598,7 +598,7 @@ if __name__ == "__main__":
     a += '\n NEXT MODEL\n\n'
     model_lstm_mc = LSTM_MC_v1(input_size=10, hidden_size=20, num_stacked_layres=2, output_classes=20, act_fn='relu')
     a += get_model_summary(model_lstm_mc)
-    a += '\nNEXT MODEL\n\n'
+    a += '\n NEXT MODEL\n\n'
     model = LSTM_regression_v1(1, 4, 1)
     a += get_model_summary(model)
     write_to_file('delete_this.txt')
