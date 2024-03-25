@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import torch
 
-
+# Change this to "data/processed-data-split-laptime.csv" to use the split laptime data
 PROCESSED_DATA_PATH = "data/processed-data.csv"
 
 
