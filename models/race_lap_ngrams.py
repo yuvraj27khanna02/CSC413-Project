@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import torch
 
-
+# Change this to "data/processed-data-split-laptime.csv" to use the split laptime data
 PROCESSED_DATA_PATH = "data/processed-data.csv"
 
 
@@ -79,8 +79,13 @@ class RaceLapNgrams:
         return self.get_tensors(self.test_indices)
 
     def get_tensors(self, indices):
+        expected_ngram_size = self.n * self.data_dim
+
         ngrams = [self.df.iloc[i:i+self.n] for i in indices]
-        data_tensor = torch.tensor(np.array([ngram.values.flatten() for ngram in ngrams]), dtype=torch.float32)
+        ngrams_array = [ngram.values.flatten() for ngram in ngrams]
+        ngrams_array = [ngram for ngram in ngrams_array if len(ngram) == expected_ngram_size]
+
+        data_tensor = torch.tensor(np.array(ngrams_array), dtype=torch.float32)
 
         X_tensor, t_tensor = data_tensor[:, :-self.data_dim], data_tensor[:, -self.data_dim:]
         t_laptime = t_tensor[:, 1]
