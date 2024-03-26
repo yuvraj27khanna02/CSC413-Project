@@ -3,8 +3,8 @@ import numpy as np
 import torch
 
 # Change this to "data/processed-data-split-laptime.csv" to use the split laptime data
-PROCESSED_DATA_PATH = "data/processed-data.csv"
-
+# PROCESSED_DATA_PATH = "data/processed-data.csv"
+PROCESSED_DATA_PATH = "data/processed-data-split-laptime.csv"
 
 class RaceLapNgrams:
     orig_df: pd.DataFrame
@@ -96,6 +96,6 @@ class RaceLapNgrams:
 
 
 if __name__ == "__main__":
-    three_gram = RaceLapNgrams(20)
+    three_gram = RaceLapNgrams(2)
     print(three_gram.data_dim)
 

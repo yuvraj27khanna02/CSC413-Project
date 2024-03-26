@@ -468,7 +468,7 @@ def train_model_lstm(laptime_model: LSTM_regression_v1, position_model:LSTM_MC_v
 
 
 if __name__ == "__main__":
-    device = torch.device('cpu')
+    # device = torch.device('mps')
     FILE_TO_STORE_METRICS = 'train_metrics_1.json'
     json_write([], FILE_TO_STORE_METRICS)
 
@@ -477,10 +477,14 @@ if __name__ == "__main__":
     batchsize = 512
     num_epochs = 1
     verbose_every = 10
-    n_list = [2, 5]
-    hidden_size_list = [(20, 20)]
-    num_layers_list = [30]
+    # n_list = [7, 17, 25]
+    n_list = [25]
+    hidden_size_list = [(15, 15)]
+    # num_layers_list = [3, 7, 15]
+    num_layers_list = [15]
     lr_list = [1e-5]
+    lr = 1e-5
+    device_list = [torch.device('mps'), torch.device('cpu')]
 
     try:
         for n in n_list:
@@ -497,7 +501,8 @@ if __name__ == "__main__":
             print(f"train size: {len(train_dataset)} \t val size: {len(val_dataset)} \t test size: {len(test_dataset)}")
 
             for laptime_model_hidden_size, position_model_hidden_size in hidden_size_list:
-                for lr in lr_list:
+                for device in device_list:  
+                # for lr in lr_list:
                     for num_layers in num_layers_list:
                         print(f'\t {border_break} \nANN v1 \t num_layers: {num_layers} \t lr: {lr} \t laptime_hidden_size: {laptime_model_hidden_size} \t position_hidden_size: {position_model_hidden_size}')
                         laptime_model = ANN_regression_v1(input_size=data_dim, input_num=input_num, num_layers=num_layers, hidden_size=laptime_model_hidden_size, act_fn='relu')
