@@ -54,79 +54,6 @@ def _get_optimiser(optimiser=str, model_params=dict, lr=float, weight_decay=floa
         return torch.optim.RMSprop(model_params, lr=lr, weight_decay=weight_decay)
 
 
-def get_laptime_accuracy(dataset:torch.utils.data.TensorDataset, model:torch.nn.Module,
-                         output_mae_accuracy=True, output_mse_accuracy=False, output_rmse_accuracy=False):
-    total_mae_accuracy = 0
-    total_mse_accuracy = 0
-    total_rmse_accuracy = 0
-    total_count = 0
-
-    for (X, t_laptime, t_position) in dataset:
-        t_laptime = t_laptime.view(-1, 1)
-        y_laptime, y_position = model(X)
-
-        mae_accuracy = torch.mean(torch.abs(y_laptime - t_laptime))
-        mse_accuracy = torch.mean((y_laptime - t_laptime)**2)
-        rmse_accuracy = torch.sqrt(mse_accuracy)
-
-        total_mae_accuracy += mae_accuracy
-        total_mse_accuracy += mse_accuracy
-        total_rmse_accuracy += rmse_accuracy
-        total_count += 1
-    
-    if output_mae_accuracy and output_mse_accuracy and output_rmse_accuracy:
-        return total_mae_accuracy / total_count, total_mse_accuracy / total_count, total_rmse_accuracy / total_count
-    elif output_mae_accuracy:
-        return total_mae_accuracy / total_count
-    else:
-        raise ValueError("No output specified")
-
-def get_position_accuracy(dataset:torch.utils.data.TensorDataset, model:torch.nn.Module):
-    total_correct = 0
-    total_count = 0
-    for (X, t_laptime, t_position) in dataset:
-        y_laptime, y_position = model(X)
-        total_correct += int(torch.sum(y_position == t_position))
-        total_count += t_position.shape[0]
-    return total_correct / total_count
-
-def get_laptime_accuracy_v2(dataset, laptime_model, device):
-    total_mae = 0
-    total_mse = 0
-    total_rmse = 0
-    total_count = 0
-    for (X, t_laptime, _) in dataset:
-        t_laptime = t_laptime.view(-1, 1)
-        X = X.to(device)
-        t_laptime = t_laptime.to(device)
-
-        y_laptime = laptime_model(X)
-        mae_accuracy = torch.mean(torch.abs(y_laptime - t_laptime))
-        mse_accuracy = torch.mean((y_laptime - t_laptime)**2)
-        rmse_accuracy = torch.sqrt(mse_accuracy)
-        total_mae += mae_accuracy
-        total_mse += mse_accuracy
-        total_rmse += rmse_accuracy
-        total_count += 1
-    return total_mae / total_count, total_mse / total_count, total_rmse / total_count
-
-def get_position_accuracy_v2(dataset, position_model, device):
-    total_correct = 0
-    total_count = 0
-    for (X, _, t_position) in dataset:
-        X = X.to(device)
-        t_position = t_position.to(device)
-
-        y_position = position_model(X)
-
-        _, y_classes = torch.max(y_position, 1)
-        _, t_classes = torch.max(t_position, 1)
-
-        total_correct += (y_classes == t_classes).sum().item()
-        total_count += t_position.size(0)
-
-    return total_correct / total_count
-
 def get_data(n=3, train_split=0.6, val_split=0.2, data_dim=int,
              device=get_device(), small_data=False, VERBOSE=False):
     
@@ -153,107 +80,40 @@ def get_data(n=3, train_split=0.6, val_split=0.2, data_dim=int,
     
     return train_dataset, val_dataset, test_dataset
 
-def train_model(model:ANN_MIMO_v2,
-                train_dataloader:torch.utils.data.DataLoader,
-                val_dataloader:torch.utils.data.DataLoader,
-                num_epochs=10, 
-                verbose_every=10,
-                criterion_laptime=torch.nn.MSELoss(),
-                criterion_position=torch.nn.CrossEntropyLoss(),
-                device=get_device(),
-                datatype=torch.float32,
-                loss_model=Loss_Model_v1,
-                VERBOSE=False):
+def laptime_accuracy_rnn(model, dataset, device):
+    mae, mse, rmse, count = 0, 0, 0, 0
+    total_samples = len(dataset)
+
+    for X, t_laptime, _ in dataset:
+        X = X.to(device)
+        t_laptime = t_laptime.to(device)
+
+        y_laptime, _ = model(X)
+
+        mae += torch.mean(torch.abs(y_laptime - t_laptime)).sum().item()
+        mse += torch.mean((y_laptime - t_laptime) ** 2).sum()
+        rmse += torch.sqrt(mse)
+        count += 1
     
-    if VERBOSE:
-        print(f"Training on {device}")
-    
-    model.to(device, dtype=datatype)
-    loss_model.to(device, dtype=datatype)
+    return mae / count, mse.item() / count, rmse.item() / count
 
-    train_loss_sum_list = []
-    train_loss_laptime_list = []
-    train_loss_position_list = []
-    train_acc_laptime_list = []
-    train_acc_position_list = []
-    val_acc_laptime_list = []
-    val_acc_position_list = []
-    epoch_list = []
-    itr_list = []
-    model_parameters_list = []
-    loss_model_parameters_list = []
-    
-    model_optimiser = model.get_optimiser()
-    loss_optimiser = loss_model.get_optimiser()
-    iter_count = 0
+def position_accuracy_rnn(model, dataset, device):
+    correct, total = 0, 0
+    for X, _, t_position in dataset:
+        X = X.to(device)
+        t_position = t_position.to(device).view(-1)
+        y_position, _ = model(X)
 
-    for epoch in range(num_epochs):
-        for (X, t_laptime, t_position) in train_dataloader:
+        _, y_classes = torch.max(y_position, 1)
+        _, t_classes = torch.max(t_position, 0)
 
-            # Format data
-            X = X.to(device, dtype=datatype)
-            t_laptime = t_laptime.to(device, dtype=datatype)
-            t_position = t_position.to(device, dtype=datatype)
-            t_laptime = t_laptime.view(-1, 1)
+        correct += (y_classes == t_classes).sum().item()
+        total += t_position.size(0)
 
-            # Training model
-            model.train()
-            # Forward pass
-            y_laptime, y_position = model(X)
-            loss_laptime = criterion_laptime(y_laptime, t_laptime)
-            loss_position = criterion_position(y_position, t_position)
-            loss = loss_model(loss_laptime, loss_position)
-            # Backward pass
-            loss.backward()
-            loss_optimiser.step()
-            loss_optimiser.zero_grad()
-            model_optimiser.step()
-            model_optimiser.zero_grad()
+    return correct / total
 
-            # Evaluating model
-            with torch.no_grad():
-                model.eval()
-                train_laptime_accuracy = get_laptime_accuracy(train_dataloader, model)
-                train_position_accuracy = get_position_accuracy(train_dataloader, model)
-                val_laptime_accuracy = get_laptime_accuracy(val_dataloader, model)
-                val_position_accuracy = get_position_accuracy(val_dataloader, model)
-            
-            train_loss_sum_list.append(loss.item())
-            train_loss_laptime_list.append(loss_laptime.item())
-            train_loss_position_list.append(loss_position.item())
-            train_acc_laptime_list.append(train_laptime_accuracy)
-            train_acc_position_list.append(train_position_accuracy)
-            val_acc_laptime_list.append(val_laptime_accuracy)
-            val_acc_position_list.append(val_position_accuracy)
-            epoch_list.append(epoch)
-            itr_list.append(iter_count)
-            # TODO: add model params to model_parameters_list
-            loss_model_parameters_list.append(dict(loss_model.state_dict()))
-
-            if (VERBOSE) and (iter_count % verbose_every == 0):
-                print(f"epoch:{epoch} \t itr:{iter_count} \t batch size:{y_laptime.shape[0]} \t loss:{loss.item()}"
-                      f"\n LOSS MODEL \t w1:{loss_model.w1.item()} \t w2:{loss_model.w2.item()}"
-                      f"\n LAPTIME OUTPUT \t train mse loss: {loss_laptime.item()} \t train mae accuracy: {train_laptime_accuracy} \t val mae accuracy: {val_laptime_accuracy}"
-                      f"\n POSITION OUTPUT \t train loss: {loss_position.item()} \t train accuracy: {train_position_accuracy} \t val accuracy: {val_position_accuracy} \n")
-
-            iter_count += 1
-    
-    return {
-        'laptime_loss_criterion': criterion_laptime,
-        'position_loss_criterion': criterion_position,
-        'train_loss_sum': train_loss_sum_list,
-        'train_loss_laptime': train_loss_laptime_list,
-        'train_loss_position': train_loss_position_list,
-        'train_acc_laptime': train_acc_laptime_list,
-        'train_acc_position': train_acc_position_list,
-        'val_acc_laptime': val_acc_laptime_list,
-        'val_acc_position': val_acc_position_list,
-        'epoch': epoch_list,
-        'itr': itr_list,
-    }
-
-def train_model_v2(laptime_model: MLP_regression_v1,
-                   position_model: MLP_MC_v1,
+def train_model_rnn(laptime_model: RNN_regression_v1,
+                   position_model: RNN_MC_v1,
                    train_dataset,
                    val_dataset,
                    num_epochs=10,
@@ -316,13 +176,14 @@ def train_model_v2(laptime_model: MLP_regression_v1,
             t_laptime = t_laptime.to(device, dtype=datatype)
             t_position = t_position.to(device, dtype=datatype)
             t_laptime = t_laptime.view(-1, 1)
+            X = X.view(batch_size, -1, X.size(-1))
             _, t_position_indices = torch.max(t_position, dim=1)
             # Training model
             laptime_model.train()
             position_model.train()
             # Forward pass
-            y_laptime, laptime_hidden = laptime_model(X, laptime_hidden)
-            y_position, position_hidden = position_model(X, position_hidden)
+            y_laptime, laptime_hidden = laptime_model(X)
+            y_position, position_hidden = position_model(X)
 
             laptime_hidden = laptime_hidden.detach()            # what does this do?
             position_hidden = position_hidden.data              # what does this do?
@@ -341,20 +202,20 @@ def train_model_v2(laptime_model: MLP_regression_v1,
             with torch.no_grad():
                 laptime_model.eval()
                 position_model.eval()
-                train_laptime_mae, train_laptime_mse, train_laptime_rmse = get_laptime_accuracy_v2(train_dataloader, laptime_model, device)
-                val_laptime_mae, val_laptime_mse, val_laptime_rmse = get_laptime_accuracy_v2(val_dataloader, laptime_model, device)
-                train_position_accuracy = get_position_accuracy_v2(train_dataloader, position_model, device)
-                val_position_accuracy = get_position_accuracy_v2(val_dataloader, position_model, device)
+                train_laptime_mae, train_laptime_mse, train_laptime_rmse = laptime_accuracy_rnn(laptime_model, train_dataset, device)
+                val_laptime_mae, val_laptime_mse, val_laptime_rmse = laptime_accuracy_rnn(laptime_model, val_dataset, device)
+                train_position_accuracy = position_accuracy_rnn(position_model, train_dataset, device)
+                val_position_accuracy = position_accuracy_rnn(position_model, val_dataset, device)
 
             train_acc_laptime_list.append({
-                'mae': train_laptime_mae.item(),
-                'mse': train_laptime_mse.item(),
-                'rmse': train_laptime_rmse.item()
+                'mae': train_laptime_mae,
+                'mse': train_laptime_mse,
+                'rmse': train_laptime_rmse
             })
             val_acc_laptime_list.append({
-                'mae': val_laptime_mae.item(),
-                'mse': val_laptime_mse.item(),
-                'rmse': val_laptime_rmse.item()
+                'mae': val_laptime_mae,
+                'mse': val_laptime_mse,
+                'rmse': val_laptime_rmse
             })
             train_loss_laptime_list.append(loss_laptime.item())
             train_loss_position_list.append(loss_position.item())
@@ -429,18 +290,15 @@ def train_model_v2(laptime_model: MLP_regression_v1,
             'val_acc_laptime': val_acc_laptime_list,
             'val_acc_position': val_acc_position_list,
             'epoch_time': epoch_time_delta_list,
-            'iter_time': iter_time_delta_list
+            'iter_time': iter_time_delta_list,
+            # 'laptime_hidden': laptime_hidden,
+            # 'position_hidden': position_hidden
         }
     }
 
 if __name__ == "__main__":
 
     train_begin_time = datetime.now()
-
-    # model1 = ANN_MIMO_v2(input_num=2, input_size=125, hidden_dim=100, emb_dim=30, hidden_output_list=[5, 25], act_fn='relu', optimiser='adam', lr=0.0001)
-    # loss_model1 = Loss_Model_v1(optimiser='adam', lr=0.1)
-    # print(f"\n === Training model === \n")
-    # metrics = train_model(model=model1, loss_model=loss_model1, train_dataloader=train_dataloader, val_dataloader=val_dataloader, num_epochs=10, verbose_every=100, VERBOSE=True)
 
     all_metrics = []
 
@@ -459,33 +317,21 @@ if __name__ == "__main__":
 
     hidden_size_list = [(15, 15), (25, 25)]
     num_layers_list = [2, 10]
-    # lr_list = [1e-5]
     lr = 1e-5
 
     for laptime_model_hidden_size, position_model_hidden_size in hidden_size_list:
         print(f'\n \t === training hidden size: {laptime_model_hidden_size} , {position_model_hidden_size} ===')
         for num_layer in num_layers_list:
-            print(f'\n \t === lr: {num_layers_list} \t num_layers: {num_layer} \t training hidden size: {laptime_model_hidden_size} , {position_model_hidden_size} ======')
+            print(f'\n \t === lr: {lr} \t num_layers: {num_layer} \t training hidden size: {laptime_model_hidden_size} , {position_model_hidden_size} ======')
 
             laptime_model = RNN_regression_v1(input_size=data_dim, input_num=input_num, emb_size=laptime_model_hidden_size, num_layers=num_layer, hidden_size=laptime_model_hidden_size, act_fn='relu')
             position_model = RNN_MC_v1(input_size=data_dim, input_num=input_num, emb_size=position_model_hidden_size, hidden_size=position_model_hidden_size, num_layers=num_layer, output_classes=20, act_fn='relu')
-            rnn_v2_metrics = train_model_v2(laptime_model=laptime_model, position_model=position_model,
+            rnn_v2_metrics = train_model_rnn(laptime_model=laptime_model, position_model=position_model,
                                     train_dataset=train_dataset, val_dataset=val_dataset,
                                     laptime_optimiser='adam', position_optimiser='adam',
                                     verbose_every=30, num_epochs=1, batch_size=64, lr=lr, weight_decay=0,
                                     VERBOSE=True, device=device)
             all_metrics.append(rnn_v2_metrics)
-
-            # for num_layers in num_layers_list:
-            #     print(f'\n \t === num_layers: {num_layers} ===')
-            #     laptime_model = RNN_regression_v1(input_size=data_dim, input_num=2, num_layers=num_layers, hidden_size=laptime_model_hidden_size, act_fn='relu')
-            #     position_model = RNN_MC_v1(input_size=data_dim, input_num=2, hidden_size=position_model_hidden_size, num_layers=num_layers, output_classes=20, act_fn='relu')
-            #     ann_v1_metrics = train_model_v2(laptime_model=laptime_model, position_model=position_model,
-            #                             train_dataset=train_dataset, val_dataset=val_dataset,
-            #                             laptime_optimiser='adam', position_optimiser='adam',
-            #                             verbose_every=30, num_epochs=1, batch_size=64, lr=lr, weight_decay=0.001,
-            #                             VERBOSE=True, device=device)
-            #     all_metrics.append(ann_v1_metrics)
 
     # to create new metrics file
     json_write(all_metrics, 'train_metrics.json')
