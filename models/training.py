@@ -468,7 +468,7 @@ def train_model_lstm(laptime_model: LSTM_regression_v1, position_model:LSTM_MC_v
 
 
 if __name__ == "__main__":
-    device = torch.device('cpu')
+    device = torch.device('cuda')
     FILE_TO_STORE_METRICS = 'train_metrics_1.json'
     json_write([], FILE_TO_STORE_METRICS)
 
