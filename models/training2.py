@@ -82,7 +82,6 @@ def get_data(n=3, train_split=0.6, val_split=0.2, data_dim=int,
 
 def laptime_accuracy_rnn(model, dataset, device):
     mae, mse, rmse, count = 0, 0, 0, 0
-    total_samples = len(dataset)
 
     for X, t_laptime, _ in dataset:
         X = X.to(device)
@@ -90,12 +89,12 @@ def laptime_accuracy_rnn(model, dataset, device):
 
         y_laptime, _ = model(X)
 
-        mae += torch.mean(torch.abs(y_laptime - t_laptime)).sum().item()
+        mae += torch.mean(torch.abs(y_laptime - t_laptime)).sum()
         mse += torch.mean((y_laptime - t_laptime) ** 2).sum()
         rmse += torch.sqrt(mse)
         count += 1
     
-    return mae / count, mse.item() / count, rmse.item() / count
+    return mae / count, mse / count, rmse / count
 
 def position_accuracy_rnn(model, dataset, device):
     correct, total = 0, 0
@@ -107,7 +106,7 @@ def position_accuracy_rnn(model, dataset, device):
         _, y_classes = torch.max(y_position, 1)
         _, t_classes = torch.max(t_position, 0)
 
-        correct += (y_classes == t_classes).sum().item()
+        correct += (y_classes == t_classes).sum()
         total += t_position.size(0)
 
     return correct / total
@@ -176,7 +175,8 @@ def train_model_rnn(laptime_model: RNN_regression_v1,
             t_laptime = t_laptime.to(device, dtype=datatype)
             t_position = t_position.to(device, dtype=datatype)
             t_laptime = t_laptime.view(-1, 1)
-            X = X.view(batch_size, -1, X.size(-1))
+            # X =X.view(batch_size, -1, X.size(-1))
+            X.view(X.size(0), -1, X.size(-1))
             _, t_position_indices = torch.max(t_position, dim=1)
             # Training model
             laptime_model.train()
@@ -291,8 +291,8 @@ def train_model_rnn(laptime_model: RNN_regression_v1,
             'val_acc_position': val_acc_position_list,
             'epoch_time': epoch_time_delta_list,
             'iter_time': iter_time_delta_list,
-            # 'laptime_hidden': laptime_hidden,
-            # 'position_hidden': position_hidden
+            'laptime_hidden': laptime_hidden,
+            'position_hidden': position_hidden
         }
     }
 
@@ -302,7 +302,7 @@ if __name__ == "__main__":
 
     all_metrics = []
 
-    n = 3
+    n = 10
     input_num = n-1
 
     race_lap_ngrams = RaceLapNgrams(n=n)
@@ -315,8 +315,8 @@ if __name__ == "__main__":
     device = torch.device('cpu')
     data_dim = race_lap_ngrams.data_dim
 
-    hidden_size_list = [(15, 15), (25, 25)]
-    num_layers_list = [2, 10]
+    hidden_size_list = [(15, 15)]
+    num_layers_list = [2]
     lr = 1e-5
 
     for laptime_model_hidden_size, position_model_hidden_size in hidden_size_list:
@@ -332,6 +332,15 @@ if __name__ == "__main__":
                                     verbose_every=30, num_epochs=1, batch_size=64, lr=lr, weight_decay=0,
                                     VERBOSE=True, device=device)
             all_metrics.append(rnn_v2_metrics)
+
+            # laptime_model = RNN_regression_v2(input_size=data_dim, input_num=input_num, emb_size=laptime_model_hidden_size, rnn_layers=num_layer, hidden_size=laptime_model_hidden_size, act_fn='relu')
+            # position_model = RNN_MC_v2(input_size=data_dim, input_num=input_num, emb_size=position_model_hidden_size, hidden_size=position_model_hidden_size, rnn_layers=num_layer, output_classes=20, act_fn='relu')
+            # rnn_v2_metrics = train_model_rnn(laptime_model=laptime_model, position_model=position_model,
+            #                         train_dataset=train_dataset, val_dataset=val_dataset,
+            #                         laptime_optimiser='adam', position_optimiser='adam',
+            #                         verbose_every=30, num_epochs=1, batch_size=16, lr=lr, weight_decay=0,
+            #                         VERBOSE=True, device=device)
+            # all_metrics.append(rnn_v2_metrics)
 
     # to create new metrics file
     json_write(all_metrics, 'train_metrics.json')
