@@ -4,7 +4,7 @@ from race_lap_ngrams import RaceLapNgrams
 if __name__ == "__main__":
     n = 2 # Our baseline only depends on the previous lap
 
-    race_lap_ngrams = RaceLapNgrams(n=n, small=True)
+    race_lap_ngrams = RaceLapNgrams(n=n)
     ngram_indices = race_lap_ngrams.ngram_indices
     ngram_df = race_lap_ngrams.df
 

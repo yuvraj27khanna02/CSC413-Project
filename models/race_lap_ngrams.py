@@ -21,6 +21,9 @@ class RaceLapNgrams:
 
     small = False
 
+    laptime_index = 0
+    position_start_index = 0
+
     def __init__(self, n, processed_data_path = PROCESSED_DATA_PATH, small = False):
         self.small = small
         self.orig_df = pd.read_csv(processed_data_path).iloc[:, 1:]
@@ -30,6 +33,9 @@ class RaceLapNgrams:
             ignore_index=True)
 
         self.df = self.orig_df.drop(columns=['Event_Orig', 'Driver_Orig'])
+
+        self.laptime_index = self.df.columns.get_loc('LapTime')
+        self.position_start_index = self.df.columns.get_loc('Position_1.0')
 
         self._get_ngram_indices(n)
 
@@ -88,8 +94,9 @@ class RaceLapNgrams:
         data_tensor = torch.tensor(np.array(ngrams_array), dtype=torch.float32)
 
         X_tensor, t_tensor = data_tensor[:, :-self.data_dim], data_tensor[:, -self.data_dim:]
-        t_laptime = t_tensor[:, 1]
-        t_position = t_tensor[:, 57:77]
+        t_laptime = t_tensor[:, self.laptime_index]
+        t_position = t_tensor[:, self.position_start_index:self.position_start_index+20]
+        X_tensor = X_tensor.view(-1, self.n - 1, self.data_dim)
 
         return X_tensor, t_laptime, t_position
 
