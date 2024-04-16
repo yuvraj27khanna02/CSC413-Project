@@ -103,9 +103,10 @@ class MLP_regression_v1(torch.nn.Module):
         self.data_dim = data_dim
     
     def forward(self, input):
-        input_list = torch.split(input, self.data_dim, 1)
-        x = torch.cat([self.act_fn(self.fc_1(i)) for i in input_list], dim=1)
-        out = self.fc_n(x)
+        x = self.act_fn(self.fc_1(input))
+        x = x.view(x.size(0), -1)
+        out = self.act_fn(self.fc_n(x))
+
         return out
     
     def get_inputsize(self):
@@ -123,9 +124,9 @@ class MLP_MC_v1(torch.nn.Module):
         self.data_dim = data_dim
     
     def forward(self, input):
-        input_list = torch.split(input, self.data_dim, 1)
-        x = torch.cat([self.act_fn(self.fc_1(i)) for i in input_list], 1)
-        out = self.fc_n(x)
+        x = self.act_fn(self.fc_1(input))
+        x = x.view(x.size(0), -1)
+        out = self.act_fn(self.fc_n(x))
         return out
     
     def get_inputsize(self):
@@ -444,25 +445,27 @@ class ANN_MO_v1_2(torch.nn.Module):
 
 class RNN_regression_v1(torch.nn.Module):
 
-    def __init__(self, input_size=int, emb_size=int, hidden_size=int, act_fn=str, steps=int) -> None:
+    def __init__(self, data_dim=int, emb_size=int, hidden_size=int, num_layers=1) -> None:
         super().__init__()
 
-        self.input_size = input_size
+        self.input_size = data_dim
         self.hidden_size = hidden_size
-        self.steps = steps
-        self.fc_1 = torch.nn.Linear(input_size, emb_size)
-        self.rnn = torch.nn.RNN(emb_size, hidden_size, batch_first=True)
-        self.fc_n = torch.nn.Linear(hidden_size, 1)
-        self.act_fn = _get_act_fn(act_fn)
-
-        self.hidden_tensor = torch.zeros(hidden_size, hidden_size)
-
-        raise NotImplementedError
+        self.fc_1 = torch.nn.Sequential(
+            torch.nn.Linear(data_dim, emb_size),
+            torch.nn.ReLU()
+        )
+        self.rnn = torch.nn.RNN(emb_size, hidden_size, num_layers, batch_first=True)
+        self.fc_n = torch.nn.Sequential(
+            torch.nn.Linear(hidden_size, 10),
+            torch.nn.ReLU(),
+            torch.nn.Linear(10, 1)
+        )
     
-    def forward(self, input_x, hidden_tensor):
-        x = self.act_fn(self.fc_1(input_x))
-        out, hidden_tensor = self.rnn(x, hidden_tensor)
-        out = self.fc(out)
+    def forward(self, X):
+        x = self.fc_1(X)
+        out_, hidden_tensor = self.rnn(x)
+        out = out_[:, -1, :]
+        out = self.fc_n(out)
         return out
     
     def get_inputsize(self):
@@ -470,26 +473,27 @@ class RNN_regression_v1(torch.nn.Module):
     
 class RNN_MC_v1(torch.nn.Module):
 
-    def __init__(self, input_size=int, emb_size=int, hidden_size=int, output_classes=int, act_fn=str, steps=int) -> None:
+    def __init__(self, data_dim=int, emb_size=int, hidden_size=int, output_classes=int) -> None:
         super().__init__()
 
-        self.input_size = input_size
+        self.input_size = data_dim
         self.hidden_size = hidden_size
-        self.steps = steps
-        self.fc_1 = torch.nn.Linear(input_size, emb_size)
+        self.fc_1 = torch.nn.Sequential(
+            torch.nn.Linear(data_dim, emb_size),
+            torch.nn.ReLU()
+        )
         self.rnn = torch.nn.RNN(emb_size, hidden_size, batch_first=True)
-        self.fc_n = torch.nn.Linear(hidden_size, output_classes)
-        self.act_fn = _get_act_fn(act_fn)
-
-        # hidden tensor initiated to 0
-        self.hidden_tensor = torch.zeros(hidden_size, hidden_size)
-
-        raise NotImplementedError
+        self.fc_n = torch.nn.Sequential(
+            torch.nn.Linear(hidden_size, 10),
+            torch.nn.ReLU(),
+            torch.nn.Linear(10, output_classes)
+        )
     
-    def forward(self, input_x, hidden_tensor):
-        x = self.act_fn(self.fc_1(input_x))
-        out, hidden_tensor = self.rnn(x, hidden_tensor)
-        out = self.fc(out)
+    def forward(self, X):
+        x = self.fc_1(X)
+        out_, hidden_ = self.rnn(x)
+        out = out_[:, -1, :]
+        out = self.fc_n(out)
         return out
     
     def get_inputsize(self):
@@ -497,50 +501,62 @@ class RNN_MC_v1(torch.nn.Module):
     
 class LSTM_regression_v1(torch.nn.Module):
 
-    def __init__(self, input_size=int, hidden_size=int, num_stacked_layres=int, act_fn=str) -> None:
+    def __init__(self, data_dim=int, emb_size=int, hidden_size=int, num_layers=1) -> None:
         super().__init__()
 
         self.hidden_size = hidden_size
-        self.num_stacked_layres = num_stacked_layres
-        self.act_fn = _get_act_fn(act_fn)
-        self.input_size = input_size
+        self.num_layers = num_layers
+        self.emb_size = emb_size
+        self.input_size = data_dim
 
-        self.lstm = torch.nn.LSTM(input_size, hidden_size, num_stacked_layres, batch_first=True)
-        self.fc_n = torch.nn.Linear(hidden_size, 1)
+        self.fc_1 = torch.nn.Sequential(
+            torch.nn.Linear(data_dim, emb_size),
+            torch.nn.ReLU()
+        )
+        self.lstm = torch.nn.LSTM(emb_size, hidden_size, num_layers, batch_first=True)
+        self.fc_n = torch.nn.Sequential(
+            torch.nn.Linear(hidden_size, 10),
+            torch.nn.ReLU(),
+            torch.nn.Linear(10, 1)
+        )
     
-    def forward(self, x):
-        batch_size = x.size(0)
-        h0 = torch.zeros(self.num_stacked_layres, batch_size, self.hidden_size).to(torch.device(os.environ['device']))
-        c0 = torch.zeros(self.num_stacked_layres, batch_size, self.hidden_size).to(torch.device(os.environ['device']))
+    def forward(self, X):
 
-        out, hidden = self.lstm(x, (h0, c0))
-        out = self.fc_n(out[:, -1, :])
-        return out, hidden
+        x = self.fc_1(X)
+        out_, (hidden_, cell_) = self.lstm(x)
+        out = out_[:, -1, :]
+        out = self.fc_n(out)
+        return out
     
     def get_inputsize(self):
         return self.input_size
 
 class LSTM_MC_v1(torch.nn.Module):
 
-    def __init__(self, input_size=int, hidden_size=int, num_stacked_layres=int, output_classes=int, act_fn=str) -> None:
+    def __init__(self, data_dim=int, hidden_size=int, num_layers=1, output_classes=int) -> None:
         super().__init__()
 
         self.hidden_size = hidden_size
-        self.num_stacked_layres = num_stacked_layres
-        self.act_fn = _get_act_fn(act_fn)
-        self.input_size = input_size
+        self.num_layers = num_layers
+        self.input_size = data_dim
 
-        self.lstm = torch.nn.LSTM(input_size, hidden_size, num_stacked_layres, batch_first=True)
-        self.fc_n = torch.nn.Linear(hidden_size, output_classes)
+        self.fc_1 = torch.nn.Sequential(
+            torch.nn.Linear(data_dim, hidden_size),
+            torch.nn.ReLU()
+        )
+        self.lstm = torch.nn.LSTM(data_dim, hidden_size, num_layers, batch_first=True)
+        self.fc_n = torch.nn.Sequential(
+            torch.nn.Linear(hidden_size, 10),
+            torch.nn.ReLU(),
+            torch.nn.Linear(10, output_classes)
+        )
 
-    def forward(self, x):
-        batch_size = x.size(0)
-        h0 = torch.zeros(self.num_stacked_layres, batch_size, self.hidden_size).to(torch.device(os.environ['device']))
-        c0 = torch.zeros(self.num_stacked_layres, batch_size, self.hidden_size).to(torch.device(os.environ['device']))
-
-        out, hidden = self.lstm(x, (h0, c0))
-        out = self.fc_n(out[:, -1, :])
-        return out, hidden
+    def forward(self, X):
+        x = self.fc_1(X)
+        out_, (hidden_, cell_) = self.lstm(x)
+        out = out_[:, -1, :]
+        out = self.fc_n(out)
+        return out
     
     def get_inputsize(self):
         return self.input_size
@@ -593,14 +609,14 @@ if __name__ == "__main__":
     # a += get_model_summary(model3)
     # write_to_file('model_summary_1.txt', a)
 
-    model_lstm_reg = LSTM_regression_v1(input_size=10, hidden_size=20, num_stacked_layres=2, act_fn='relu')
-    a = get_model_summary(model_lstm_reg)
-    a += '\n NEXT MODEL\n\n'
-    model_lstm_mc = LSTM_MC_v1(input_size=10, hidden_size=20, num_stacked_layres=2, output_classes=20, act_fn='relu')
-    a += get_model_summary(model_lstm_mc)
-    a += '\n NEXT MODEL\n\n'
-    model = LSTM_regression_v1(1, 4, 1)
-    a += get_model_summary(model)
-    write_to_file('delete_this.txt')
+    # model_lstm_reg = LSTM_regression_v1(input_size=10, hidden_size=20, num_stacked_layres=2, act_fn='relu')
+    # a = get_model_summary(model_lstm_reg)
+    # a += '\n NEXT MODEL\n\n'
+    # model_lstm_mc = LSTM_MC_v1(input_size=10, hidden_size=20, num_stacked_layres=2, output_classes=20, act_fn='relu')
+    # a += get_model_summary(model_lstm_mc)
+    # a += '\n NEXT MODEL\n\n'
+    # model = LSTM_regression_v1(1, 4, 1)
+    # a += get_model_summary(model)
+    # write_to_file('delete_this.txt')
 
     pass
