@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from torchsummary import summary
 from torchsummary import summary
 import sys
@@ -494,56 +495,106 @@ class RNN_MC_v1(torch.nn.Module):
     
     def get_inputsize(self):
         return self.input_size
+
+class LSTM_regression_v0(torch.nn.Module):
+    def __init__(self, data_dim=int, hidden_size=int, lstm_layers=int) -> None:
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.data_dim = data_dim
+        self.lstm_layers = lstm_layers
+        
+        self.lstm = torch.nn.LSTM(data_dim, hidden_size, lstm_layers, batch_first=True)
+        self.fc_n = torch.nn.Linear(hidden_size, 1)
+    
+    def forward(self, X):
+        x = X.view(X.size(0), -1, self.data_dim)
+        out_, (hidden, cell) = self.lstm(x)
+        out = self.fc_n(out_[:, -1, :])
+        return out
+
+class LSTM_MC_v0(torch.nn.Module):
+    def __init__(self, data_dim=int, hidden_size=int, lstm_layers=int, output_classes=int) -> None:
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.data_dim = data_dim
+        self.lstm_layers = lstm_layers
+        self.output_classes = output_classes
+
+        self.lstm = torch.nn.LSTM(data_dim, hidden_size, lstm_layers, batch_first=True)
+        self.fc_n = torch.nn.Linear(hidden_size, output_classes)
+    
+    def forward(self, X):
+        x = X.view(X.size(0), -1, self.data_dim)
+        out_, (hidden, cell) = self.lstm(x)
+        out = self.fc_n(out_[:, -1, :])
+        return out
     
 class LSTM_regression_v1(torch.nn.Module):
 
-    def __init__(self, input_size=int, hidden_size=int, num_stacked_layres=int, act_fn=str) -> None:
+    def __init__(self, data_dim=int, input_num=int, hidden_size=int, num_layers=int, act_fn=str) -> None:
         super().__init__()
 
         self.hidden_size = hidden_size
-        self.num_stacked_layres = num_stacked_layres
+        self.num_layers = num_layers
+        self.input_num = input_num
         self.act_fn = _get_act_fn(act_fn)
-        self.input_size = input_size
+        self.data_dim = data_dim
+        self.combined_size = self.hidden_size*2
 
-        self.lstm = torch.nn.LSTM(input_size, hidden_size, num_stacked_layres, batch_first=True)
-        self.fc_n = torch.nn.Linear(hidden_size, 1)
+        self.fc_1 = torch.nn.Linear(self.data_dim, self.data_dim//2)
+        self.lstm = torch.nn.LSTM(self.data_dim//2, self.hidden_size, self.num_layers, batch_first=True)
+        self.fc_n = torch.nn.Sequential(
+            torch.nn.Linear(self.combined_size, self.combined_size//2),
+            torch.nn.ReLU(),
+            torch.nn.Linear(self.combined_size//2, 10),
+            torch.nn.ReLU(),
+            torch.nn.Linear(10, 1)
+        )
     
-    def forward(self, x):
-        batch_size = x.size(0)
-        h0 = torch.zeros(self.num_stacked_layres, batch_size, self.hidden_size).to(torch.device(os.environ['device']))
-        c0 = torch.zeros(self.num_stacked_layres, batch_size, self.hidden_size).to(torch.device(os.environ['device']))
-
-        out, hidden = self.lstm(x, (h0, c0))
-        out = self.fc_n(out[:, -1, :])
-        return out, hidden
+    def forward(self, X):
+        X = X.view(X.size(0), -1, self.data_dim)
+        x = self.fc_1(X)
+        out_, (hidden, cell) = self.lstm(x)
+        out_mean = torch.mean(out_, dim=1)
+        combined = torch.cat((out_mean, hidden[-1]), dim=1)
+        out = self.fc_n(combined)
+        return out
     
     def get_inputsize(self):
-        return self.input_size
+        return (self.input_num, self.data_dim)
 
 class LSTM_MC_v1(torch.nn.Module):
 
-    def __init__(self, input_size=int, hidden_size=int, num_stacked_layres=int, output_classes=int, act_fn=str) -> None:
+    def __init__(self, data_dim=int, input_num=int, hidden_size=int, num_layers=int, output_classes=int, act_fn=str) -> None:
         super().__init__()
 
         self.hidden_size = hidden_size
-        self.num_stacked_layres = num_stacked_layres
+        self.num_layers = num_layers
+        self.input_num = input_num
+        self.data_dim = data_dim
+        self.output_classes = output_classes
         self.act_fn = _get_act_fn(act_fn)
-        self.input_size = input_size
+        self.combined_size = self.hidden_size*2
 
-        self.lstm = torch.nn.LSTM(input_size, hidden_size, num_stacked_layres, batch_first=True)
-        self.fc_n = torch.nn.Linear(hidden_size, output_classes)
+        self.fc_1 = torch.nn.Linear(self.data_dim, self.data_dim//2)
+        self.lstm = torch.nn.LSTM(self.data_dim//2, self.hidden_size, self.num_layers, batch_first=True)
+        self.fc_n = torch.nn.Sequential(
+            torch.nn.Linear(self.combined_size, self.combined_size//2),
+            torch.nn.ReLU(),
+            torch.nn.Linear(self.combined_size//2, self.output_classes)
+        )
 
-    def forward(self, x):
-        batch_size = x.size(0)
-        h0 = torch.zeros(self.num_stacked_layres, batch_size, self.hidden_size).to(torch.device(os.environ['device']))
-        c0 = torch.zeros(self.num_stacked_layres, batch_size, self.hidden_size).to(torch.device(os.environ['device']))
-
-        out, hidden = self.lstm(x, (h0, c0))
-        out = self.fc_n(out[:, -1, :])
-        return out, hidden
+    def forward(self, X):
+        X = X.view(X.size(0), self.input_num, self.data_dim)
+        x = self.fc_1(X)
+        out_, (hidden, cell) = self.lstm(x)
+        out_mean = torch.mean(out_, dim=1)
+        combined = torch.cat((out_mean, hidden[-1]), dim=1)
+        out = self.fc_n(combined)
+        return out
     
     def get_inputsize(self):
-        return self.input_size
+        return (self.input_num, self.data_dim)
 
 class ANN_MIMO_v2(torch.nn.Module):
     """ ANN for multiple input and 2 outputs of regression (laptime) and classification (20 positions)
@@ -579,6 +630,175 @@ class ANN_MIMO_v2(torch.nn.Module):
     def get_inputsize(self):
         return self.input_size
 
+class RNN_reg_v3(torch.nn.Module):
+    def __init__(self, data_dim=int, emb_size=int, hidden_size=int, rnn_layers=int):
+        super(RNN_reg_v3, self).__init__()
+        self.data_dim = data_dim
+        self.emb_size = emb_size
+        self.hidden_size = hidden_size
+        self.rnn_layers = rnn_layers
+        self.fc_1 = torch.nn.Linear(data_dim, emb_size)
+        self.rnn = torch.nn.RNN(emb_size, hidden_size, rnn_layers, batch_first=True)
+        self.fc = torch.nn.Linear(hidden_size, 1)
+
+    def forward(self, X):
+        x = X.view(X.size(0), -1, self.data_dim)
+        x = self.fc_1(x)
+        out_, hidden_ = self.rnn(x)
+        out = out_[:, -1, :]
+        # out = hidden_.squeeze()
+        out = self.fc(out)
+        return out
+    
+    def get_inputsize(self):
+        return self.data_dim
+
+class RNN_MC_v3(torch.nn.Module):
+    def __init__(self, data_dim=int, emb_size=int, hidden_size=int, num_classes=int, rnn_layers=int):
+        super(RNN_MC_v3, self).__init__()
+        self.data_dim = data_dim
+        self.emb_size = emb_size
+        self.hidden_size = hidden_size
+        self.num_classes = num_classes
+        self.rnn_layers = rnn_layers
+        self.fc_1 = torch.nn.Linear(data_dim, emb_size)
+        self.rnn = torch.nn.RNN(emb_size, hidden_size, rnn_layers, batch_first=True)
+        self.fc = torch.nn.Linear(hidden_size, num_classes)
+
+    def forward(self, X):
+        x = X.view(X.size(0), -1, self.data_dim)
+        x = self.fc_1(x)
+        out_, hidden_ = self.rnn(x)
+        out = out_[:, -1, :]
+        # out = hidden_.squeeze()
+        out = self.fc(out)
+        return out
+    
+    def get_inputsize(self):
+        return self.data_dim
+
+class LSTM_reg_v3(torch.nn.Module):
+    def __init__(self, data_dim=int, emb_size=int, hidden_size=int, lstm_layers=int) -> None:
+        super(LSTM_reg_v3, self).__init__()
+        self.data_dim = data_dim
+        self.emb_size = emb_size
+        self.hidden_size = hidden_size
+        self.lstm_layers = lstm_layers
+        self.fc_1 = torch.nn.Linear(data_dim, emb_size)
+        self.lstm = torch.nn.LSTM(emb_size, hidden_size, lstm_layers, batch_first=True)
+        self.fc_n = torch.nn.Linear(hidden_size, 1)
+    
+    def forward(self, X):
+        x = X.view(X.size(0), -1, self.data_dim)
+        x = self.fc_1(x)
+        out_, (hidden, cell) = self.lstm(x)
+        out = self.fc_n(out_[:, -1, :])
+        return out
+
+class LSTM_MC_v3(torch.nn.Module):
+    def __init__(self, data_dim=int, emb_size=int, hidden_size=int, lstm_layers=int, num_classes=int) -> None:
+        super(LSTM_MC_v3, self).__init__()
+        self.data_dim = data_dim
+        self.emb_size = emb_size
+        self.hidden_size = hidden_size
+        self.lstm_layers = lstm_layers
+        self.output_classes = num_classes
+        self.fc_1 = torch.nn.Linear(data_dim, emb_size)
+        self.lstm = torch.nn.LSTM(emb_size, hidden_size, lstm_layers, batch_first=True)
+        self.fc_n = torch.nn.Linear(hidden_size, num_classes)
+    
+    def forward(self, X):
+        x = X.view(X.size(0), -1, self.data_dim)
+        x = self.fc_1(x)
+        out_, (hidden, cell) = self.lstm(x)
+        out = self.fc_n(out_[:, -1, :])
+        return out
+    
+class MyRNN_v2(torch.nn.Module):
+    def __init__(self, vocab_size, emb_size, hidden_size, num_classes, rnn_layers, fc_layers):
+        super(MyRNN_v2, self).__init__()
+        self.vocab_size = vocab_size
+        self.emb_size = emb_size
+        self.hidden_size = hidden_size
+        self.num_classes = num_classes
+        self.rnn_layers = rnn_layers
+        self.fc_layers = fc_layers
+        self.emb = torch.nn.Embedding(vocab_size, emb_size)
+        self.rnn = torch.nn.RNN(emb_size, hidden_size, rnn_layers, batch_first=True)
+        self.fc_layers = torch.nn.ModuleList([torch.nn.Linear(hidden_size, hidden_size) for _ in range(fc_layers)])
+        self.fc_n = torch.nn.Linear(hidden_size, num_classes)
+    
+    def forward(self, X):
+        x = self.emb(X)
+        out_, hidden = self.rnn(x)
+        out = out_[:, -1, :]
+        for fc_layer in self.fc_layers:
+            out = fc_layer(out)
+        out = self.fc_n(out)
+        return out, hidden
+    
+    def get_inputsize(self):
+        return self.vocab_size
+
+class Attention(nn.Module):
+  def __init__(self, hidden_size):
+    super(Attention, self).__init__()
+    self.hidden_size = hidden_size
+    self.fc = nn.Linear(self.hidden_size, self.hidden_size)
+
+  def forward(self, out, hidden):
+    hidden_last = hidden[-1]
+    hidden_transformed = self.fc(hidden_last)
+    attn_scores = torch.bmm(out, hidden_transformed.unsqueeze(2)).squeeze(2)
+    attn_weights = torch.softmax(attn_scores, dim=1)
+    context = torch.bmm(attn_weights.unsqueeze(1), out).squeeze(1)
+    return context, attn_weights
+
+class MyRNN_v3(nn.Module):
+  def __init__(self, vocab_size, emb_size, hidden_size, num_classes, rnn_layers):
+    super(MyRNN_v3, self).__init__()
+    self.vocab_size = vocab_size
+    self.emb_size = emb_size
+    self.hidden_size = hidden_size
+    self.num_classes = num_classes
+    self.rnn_layers = rnn_layers
+    self.combined_size = self.hidden_size * (self.rnn_layers + 2)
+
+    self.fc_emb = nn.Sequential(
+        nn.Embedding(self.vocab_size, self.vocab_size//2),
+        nn.ReLU(),
+        nn.Linear(self.vocab_size//2, 1024),
+        nn.ReLU(),
+        nn.Linear(1024, self.emb_size)
+    )
+    self.rnn = nn.RNN(input_size=self.emb_size, hidden_size=self.hidden_size,
+                      num_layers=self.rnn_layers, batch_first=True)
+    self.attention = Attention(self.hidden_size)
+
+    self.fc_n = nn.Sequential(
+        nn.Linear(self.combined_size, self.combined_size//2),
+        nn.ReLU(),
+        nn.Linear(self.combined_size//2, self.combined_size//4),
+        nn.ReLU(),
+        torch.nn.Linear(self.combined_size//4, self.combined_size//8),
+        nn.ReLU(),
+        torch.nn.Linear(self.combined_size//8, 64),
+        nn.ReLU(),
+        torch.nn.Linear(64, 10),
+        nn.ReLU(),
+        nn.Linear(10, self.num_classes)
+    )
+
+  def forward(self, X):
+
+    x = self.fc_emb(X)
+    out_, hidden = self.rnn(x)
+    context, attn_weights = self.attention(out_, hidden)
+    out_mean = torch.mean(out_, dim=1)
+    hidden_flat = hidden.transpose(0,1).reshape(X.size(0), -1)
+    combined = torch.cat((context, hidden_flat, out_mean), dim=1)
+    out = self.fc_n(combined)
+    return out
 
 if __name__ == "__main__":
 
@@ -592,15 +812,28 @@ if __name__ == "__main__":
     # model3 = ANN_MIMO_v2(input_num=20, input_size=500, hidden_dim=200, emb_dim=50, hidden_output_list=[5, 30], act_fn='relu')
     # a += get_model_summary(model3)
     # write_to_file('model_summary_1.txt', a)
+    # model_lstm_reg = LSTM_regression_v1(input_size=10, hidden_size=20, num_stacked_layres=2, act_fn='relu')
+    # a = get_model_summary(model_lstm_reg)
+    # a += '\n NEXT MODEL\n\n'
+    # model_lstm_mc = LSTM_MC_v1(input_size=10, hidden_size=20, num_stacked_layres=2, output_classes=20, act_fn='relu')
+    # a += get_model_summary(model_lstm_mc)
+    # a += '\n NEXT MODEL\n\n'
+    # model = LSTM_regression_v1(1, 4, 1)
+    # a += get_model_summary(model)
+    # write_to_file('delete_this.txt')
+    
+    # model = MyRNN(4117, 128, 64, 2)
+    # a = get_model_summary(model)
+    # a += '\n NEXT MODEL\n\n'
+    # model = MyRNN_v2(4117, 128, 64, 5, 3, 2)
+    # a += get_model_summary(model)
+    # write_to_file('delete_this.txt', a)
 
-    model_lstm_reg = LSTM_regression_v1(input_size=10, hidden_size=20, num_stacked_layres=2, act_fn='relu')
-    a = get_model_summary(model_lstm_reg)
+    model = LSTM_regression_v1(input_size=128, hidden_size=256, num_layers=2, act_fn='relu')
+    a = get_model_summary(model)
     a += '\n NEXT MODEL\n\n'
-    model_lstm_mc = LSTM_MC_v1(input_size=10, hidden_size=20, num_stacked_layres=2, output_classes=20, act_fn='relu')
-    a += get_model_summary(model_lstm_mc)
-    a += '\n NEXT MODEL\n\n'
-    model = LSTM_regression_v1(1, 4, 1)
+    model = LSTM_MC_v1(input_size=128, hidden_size=256, num_stacked_layres=2, output_classes=20, act_fn='relu')
     a += get_model_summary(model)
-    write_to_file('delete_this.txt')
+    write_to_file('delete_this.txt', a)
 
     pass
