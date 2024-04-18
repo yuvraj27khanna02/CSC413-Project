@@ -34,14 +34,18 @@ def eval_metrics(lap_model: torch.nn.Module, pos_model:torch.nn.Module, dataload
     return lap_mae / total, lap_mse / total, pos_correct / total
 
 def train_inner(lap_model, pos_model, train_loader, val_loader, 
-                    num_epochs, initial_lr, gamma_scheduler=0.7, step_size_scheduler=20, 
+                    num_epochs, initial_lr, gamma_scheduler=0.7, step_size_scheduler=20,
+                    weight_decay=0.0, momentum=0.9,
                     verbose_every=200, save_every=10):
 
     lap_crit = torch.nn.MSELoss()
     pos_crit = torch.nn.CrossEntropyLoss()
 
-    lap_optim = torch.optim.Adam(lap_model.parameters(), lr=initial_lr)
-    pos_optim = torch.optim.Adam(pos_model.parameters(), lr=initial_lr)
+    lap_optim = torch.optim.SGD(lap_model.parameters(), lr=initial_lr, weight_decay=weight_decay, momentum=momentum)
+    pos_optim = torch.optim.SGD(pos_model.parameters(), lr=initial_lr, weight_decay=weight_decay, momentum=momentum)
+
+    # lap_optim = torch.optim.Adam(lap_model.parameters(), lr=initial_lr)
+    # pos_optim = torch.optim.Adam(pos_model.parameters(), lr=initial_lr)
 
     lap_scheduler = torch.optim.lr_scheduler.StepLR(lap_optim, step_size=step_size_scheduler, gamma=gamma_scheduler)
     pos_scheduler = torch.optim.lr_scheduler.StepLR(pos_optim, step_size=step_size_scheduler, gamma=gamma_scheduler)
@@ -240,6 +244,7 @@ def train_rnn(n=int, batchsize_list=list[int],
               lap_emb_list=list[int], lap_hidden_list=list[int], pos_emb_list=list[int], pos_hidden_list=list[int],
               lr_list=list[float], num_epochs=int, device=torch.device, 
               gamma_scheduler_list=list[float], step_size_scheduler_list=list[int],
+              weight_decay_list=list[float], momentum_list=list[float],
               output_filename='rnn_metrics_.json', verbose_every=500):
     
     metrics = []
@@ -271,32 +276,35 @@ def train_rnn(n=int, batchsize_list=list[int],
             for lr in lr_list:
                 for gamma_scheduler in gamma_scheduler_list:
                     for step_size_scheduler in step_size_scheduler_list:
+                        for weight_decay in weight_decay_list:
+                            for momentum in momentum_list:
 
-                        laptime_model = RNN_regression_v1(data_dim=race_lap_ngrams.data_dim,
-                                                        emb_size=lap_emb, hidden_size=lap_hidden)
-                        
-                        position_model = RNN_MC_v1(data_dim=race_lap_ngrams.data_dim,
-                                                emb_size=pos_emb, hidden_size=pos_hidden, output_classes=20)
-                        
-                        this_metrics = train_inner(lap_model=laptime_model, pos_model=position_model,
-                                                train_loader=train_dataloader, val_loader=val_dataloader,
-                                                num_epochs=num_epochs, initial_lr=lr, gamma_scheduler=gamma_scheduler, step_size_scheduler=step_size_scheduler,
-                                                verbose_every=verbose_every, save_every=400)
-                        
-                        this_metrics['device'] = str(device)
-                        this_metrics['hyperparameters']['init_lr'] = lr
-                        this_metrics['hyperparameters']['batchsize'] = batchsize
-                        this_metrics['hyperparameters']['num_epochs'] = num_epochs
-                        this_metrics['hyperparameters']['n'] = n
-                        this_metrics['data_info'] = {
-                            'train_size': len(train_dataloader),
-                            'val_size': len(val_dataloader),
-                            'X shape': first_train[0].shape,
-                            'laptime shape': first_train[1].shape,
-                            'postion shape': first_train[2].shape,
-                        }
+                                laptime_model = RNN_regression_v1(data_dim=race_lap_ngrams.data_dim,
+                                                                emb_size=lap_emb, hidden_size=lap_hidden)
+                                
+                                position_model = RNN_MC_v1(data_dim=race_lap_ngrams.data_dim,
+                                                        emb_size=pos_emb, hidden_size=pos_hidden, output_classes=20)
+                                
+                                this_metrics = train_inner(lap_model=laptime_model, pos_model=position_model,
+                                                        train_loader=train_dataloader, val_loader=val_dataloader,
+                                                        num_epochs=num_epochs, initial_lr=lr, gamma_scheduler=gamma_scheduler, step_size_scheduler=step_size_scheduler,
+                                                        weight_decay=weight_decay, momentum=momentum,
+                                                        verbose_every=verbose_every, save_every=400)
+                                
+                                this_metrics['device'] = str(device)
+                                this_metrics['hyperparameters']['init_lr'] = lr
+                                this_metrics['hyperparameters']['batchsize'] = batchsize
+                                this_metrics['hyperparameters']['num_epochs'] = num_epochs
+                                this_metrics['hyperparameters']['n'] = n
+                                this_metrics['data_info'] = {
+                                    'train_size': len(train_dataloader),
+                                    'val_size': len(val_dataloader),
+                                    'X shape': first_train[0].shape,
+                                    'laptime shape': first_train[1].shape,
+                                    'postion shape': first_train[2].shape,
+                                }
 
-                        metrics.append(this_metrics)
+                                metrics.append(this_metrics)
 
     print('saving metrics...')
     json_write(metrics, output_filename)
@@ -384,11 +392,12 @@ if __name__ == "__main__":
         #         output_filename=mlp_filename, verbose_every=1000)
         
         rnn_filename = f'rnn_metrics_{n}.json'
-        train_rnn(n=n, batchsize_list=[32, 128], 
-                lap_emb_list=[50], lap_hidden_list=[32, 128], pos_emb_list=[50], pos_hidden_list=[32, 128],
+        train_rnn(n=n, batchsize_list=[32], 
+                lap_emb_list=[50], lap_hidden_list=[128], pos_emb_list=[50], pos_hidden_list=[128],
                 lr_list=[1e-2, 1e-4], num_epochs=200, device=device,
-                gamma_scheduler_list=[0.5, 0.3], step_size_scheduler_list=[10, 20],
-                output_filename=rnn_filename, verbose_every=1000)
+                gamma_scheduler_list=[0.5], step_size_scheduler_list=[30],
+                weight_decay_list=[1e-1, 1e-3], momentum_list=[0.9, 0.99],
+                output_filename=rnn_filename, verbose_every=2000)
         
         # lstm_filename = f'lstm_metrics_{n}.json'
         # train_lstm(n=n, batchsize_list=[32, 128],
