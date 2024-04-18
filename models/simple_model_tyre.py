@@ -131,7 +131,7 @@ def train_position_model(model, train_loader, val_loader, num_epochs=50, lr=0.00
         if (epoch+1) % 10 == 0:
             train_acc = evaluate_position_model(model, train_loader)
             val_acc = evaluate_position_model(model, val_loader)
-            print(f'Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss:.4f}, Train Loss: {train_acc:.4f}, Val Accuracy: {val_acc:.4f}')
+            print(f'Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss:.4f}, Train Accuracy: {train_acc:.4f}, Val Accuracy: {val_acc:.4f}')
 
     return train_losses#, val_losses
 
@@ -162,17 +162,23 @@ if __name__ == "__main__":
     val_X, val_laptime, val_position = race_lap_ngrams.get_val_tensors()
     test_X, test_laptime, test_position = race_lap_ngrams.get_test_tensors()
 
+    # Get Tyre Life information
+    tyre_life_index = race_lap_ngrams.indices['TyreLife']
+    train_tyre_life = train_X[:, :, tyre_life_index]
+    val_tyre_life = val_X[:, :, tyre_life_index]
+    test_tyre_life = test_X[:, :, tyre_life_index]
+
     # Laptime
     laptime_index = race_lap_ngrams.indices['LapTime']
-    train_X_laptime = train_X[:, :, laptime_index]
-    val_X_laptime = val_X[:, :, laptime_index]
-    test_X_laptime = test_X[:, :, laptime_index]
+    train_X_laptime = torch.cat((train_X[:, :, laptime_index], train_tyre_life), dim=1)
+    val_X_laptime = torch.cat((val_X[:, :, laptime_index], val_tyre_life), dim=1)
+    test_X_laptime = torch.cat((test_X[:, :, laptime_index], test_tyre_life), dim=1)
 
     train_laptime_loader = DataLoader(TensorDataset(train_X_laptime, train_laptime), batch_size=32, shuffle=True)
     val_laptime_loader = DataLoader(TensorDataset(val_X_laptime, val_laptime), batch_size=32)
     test_laptime_loader = DataLoader(TensorDataset(test_X_laptime, test_laptime), batch_size=32)
 
-    laptime_mlp = LapTime_MLP(input_dim=n-1)
+    laptime_mlp = LapTime_MLP(input_dim=(n-1)*2)
     train_losses, test_losses = train_laptime_model(laptime_mlp, train_laptime_loader, val_laptime_loader, num_epochs=100)
     mae, mse, rmse = calculate_laptime_metrics(laptime_mlp, test_laptime_loader)
     print(f"MAE: {mae}, MSE: {mse}, RMSE: {rmse}")
@@ -180,15 +186,16 @@ if __name__ == "__main__":
     # Position
     pos_start_idx = race_lap_ngrams.indices['Position_1.0']
     pos_end_idx = race_lap_ngrams.indices['Position_20.0'] + 1
-    train_X_position = train_X[:, :, pos_start_idx:pos_end_idx].reshape(-1, (n-1) * 20)
-    val_X_position = val_X[:, :, pos_start_idx:pos_end_idx].reshape(-1, (n-1) * 20)
-    test_X_position = test_X[:, :, pos_start_idx:pos_end_idx].reshape(-1, (n-1) * 20)
+
+    train_X_position = torch.cat((train_X[:, :, pos_start_idx:pos_end_idx], train_tyre_life.reshape(-1, (n-1), 1)), dim=-1).reshape(-1, (n-1) * 21)
+    val_X_position = torch.cat((val_X[:, :, pos_start_idx:pos_end_idx], val_tyre_life.reshape(-1, (n-1), 1)), dim=-1).reshape(-1, (n-1) * 21)
+    test_X_position = torch.cat((test_X[:, :, pos_start_idx:pos_end_idx], test_tyre_life.reshape(-1, (n-1), 1)), dim=-1).reshape(-1, (n-1) * 21)
 
     train_position_loader = DataLoader(TensorDataset(train_X_position, train_position), batch_size=32, shuffle=True)
     val_position_loader = DataLoader(TensorDataset(val_X_position, val_position), batch_size=32)
     test_position_loader = DataLoader(TensorDataset(test_X_position, test_position), batch_size=32)
 
-    position_mlp = Position_MLP(n=n-1)
-    train_position_model(position_mlp, train_position_loader, val_position_loader, num_epochs=10)
+    position_mlp = Position_MLP(n=n-1, input_dim=21)
+    train_position_model(position_mlp, train_position_loader, val_position_loader, num_epochs=200)
     test_accuracy = evaluate_position_model(position_mlp, test_position_loader)
     print(f'Position MLP Test Accuracy: {test_accuracy:.4f}')
