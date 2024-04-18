@@ -55,6 +55,12 @@ def train_inner(lap_model, pos_model, train_loader, val_loader,
     prev_epoch_time = train_start_time
     prev_iter_time = train_start_time
 
+    print(f'\t {"="*100}\n')
+
+    print(f'LAPTIME MODEL: {lap_model} \n POSITION MODEL: {pos_model} \n'
+          f'num epochs: {num_epochs} \t initial lr: {initial_lr} \t gamma: {gamma_scheduler} \t step size: {step_size_scheduler} \n'
+          f'laptime criterion: {lap_crit} \t position criterion: {pos_crit} laptime optimiser: {lap_optim} \t position optimiser: {pos_optim} \n')
+
     for epoch in range(num_epochs):
 
         for X, lap_t, pos_t in train_loader:
@@ -371,23 +377,23 @@ if __name__ == "__main__":
 
     for n in [3, 7, 10, 15]:
 
-        mlp_filename = f'mlp_metrics_{n}.json'
-        train_mlp(n=n, batchsize_list=[32, 128], lap_hidden_list=[10, 15], lap_act_fn='relu',
-                pos_hidden_list=[15, 25], pos_act_fn='relu', lr_list=[1e-4, 5e-5, 1e-5],
-                num_epochs=200, device=device,
-                output_filename=mlp_filename, verbose_every=1000)
+        # mlp_filename = f'mlp_metrics_{n}.json'
+        # train_mlp(n=n, batchsize_list=[32, 128], lap_hidden_list=[10, 15], lap_act_fn='relu',
+        #         pos_hidden_list=[15, 25], pos_act_fn='relu', lr_list=[1e-4, 5e-5, 1e-5],
+        #         num_epochs=200, device=device,
+        #         output_filename=mlp_filename, verbose_every=1000)
         
         rnn_filename = f'rnn_metrics_{n}.json'
         train_rnn(n=n, batchsize_list=[32, 128], 
-                lap_emb_list=[50, 30], lap_hidden_list=[25, 10], pos_emb_list=[50, 30], pos_hidden_list=[25, 10],
+                lap_emb_list=[50], lap_hidden_list=[32, 128], pos_emb_list=[50], pos_hidden_list=[32, 128],
                 lr_list=[1e-2, 1e-4], num_epochs=200, device=device,
                 gamma_scheduler_list=[0.5, 0.3], step_size_scheduler_list=[10, 20],
                 output_filename=rnn_filename, verbose_every=1000)
         
-        lstm_filename = f'lstm_metrics_{n}.json'
-        train_lstm(n=n, batchsize_list=[32, 128],
-                lap_emb_list=[50, 30], lap_hidden_list=[25, 10], pos_emb_list=[50, 30], pos_hidden_list=[25, 10],
-                lr_list=[1e-2, 1e-4], num_epochs=200, device=device,
-                gamma_scheduler_list=[0.5, 0.3], step_size_scheduler_list=[10, 20],
-                output_filename=lstm_filename, verbose_every=1000)
+        # lstm_filename = f'lstm_metrics_{n}.json'
+        # train_lstm(n=n, batchsize_list=[32, 128],
+        #         lap_emb_list=[50, 30], lap_hidden_list=[25, 10], pos_emb_list=[50, 30], pos_hidden_list=[25, 10],
+        #         lr_list=[1e-2, 1e-4], num_epochs=200, device=device,
+        #         gamma_scheduler_list=[0.5, 0.3], step_size_scheduler_list=[10, 20],
+        #         output_filename=lstm_filename, verbose_every=1000)
     
