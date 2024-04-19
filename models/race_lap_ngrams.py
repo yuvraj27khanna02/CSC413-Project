@@ -23,9 +23,20 @@ class RaceLapNgrams:
 
     indices = {}
 
-    def __init__(self, n, processed_data_path = PROCESSED_DATA_PATH, small = False):
+    def __init__(self, n, processed_data_path = PROCESSED_DATA_PATH, small = False, hammer_time = False, driver=None, event=None):
         self.small = small
         self.orig_df = pd.read_csv(processed_data_path).iloc[:, 1:]
+
+        if hammer_time:
+            conditions = (self.orig_df['TrackStatus_Clear'] == 1.0) & (self.orig_df['InLap'] == 0.0) & (self.orig_df['OutLap'] == 0.0)
+            self.orig_df = self.orig_df[conditions]
+
+        if driver:
+            self.orig_df = self.orig_df[self.orig_df['Driver_Orig'] == driver]
+        if event:
+            self.orig_df = self.orig_df[self.orig_df['Event_Orig'] == event]
+
+
         self.orig_df.sort_values(
             by=['Year', 'Event_Orig', 'Driver_Orig', 'LapNumber'],
             inplace=True,

@@ -1,11 +1,11 @@
 import numpy as np
 from race_lap_ngrams import RaceLapNgrams
 
-if __name__ == "__main__":
-    n = 2 # Our baseline only depends on the previous lap
 
-    race_lap_ngrams = RaceLapNgrams(n=n)
-    ngram_indices = race_lap_ngrams.ngram_indices
+def baseline(n):
+    race_lap_ngrams = RaceLapNgrams(n=n, hammer_time=True)
+    race_lap_ngrams.split_by_year()
+    ngram_indices = race_lap_ngrams.test_indices
     ngram_df = race_lap_ngrams.df
 
     one_hot_start = ngram_df.columns.get_loc("Position_1.0")
@@ -32,11 +32,16 @@ if __name__ == "__main__":
 
     
     position_accuracy = correct_positions / len(ngram_indices)
-    print(f"Position accuracy: {position_accuracy}")
 
     laptime_error = np.array(laptime_errors)
     laptime_mae = np.mean(np.abs(laptime_error))
     laptime_mse = np.mean(laptime_error ** 2)
     laptime_rmse = np.sqrt(laptime_mse)
-    print(f"Laptime error: MAE {laptime_mae}, MSE {laptime_mse}, RMSE {laptime_rmse}")
+
+    return position_accuracy, laptime_mae, laptime_mse, laptime_rmse
+
+if __name__ == "__main__":
+    for n in [3, 5, 10, 20]:
+        position_accuracy, laptime_mae, laptime_mse, laptime_rmse = baseline(n)
+        print(f"n={n}: Position accuracy: {position_accuracy}, Laptime error: MAE {laptime_mae}, MSE {laptime_mse}, RMSE {laptime_rmse}")
 

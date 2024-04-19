@@ -184,7 +184,7 @@ def train_position_model(model, train_loader, val_loader, num_epochs=50, lr=0.00
         if (epoch+1) % 10 == 0:
             train_acc = evaluate_position_model(model, train_loader)
             val_acc = evaluate_position_model(model, val_loader)
-            print(f'Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss:.4f}, Train Loss: {train_acc:.4f}, Val Accuracy: {val_acc:.4f}')
+            print(f'Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}, Val Accuracy: {val_acc:.4f}')
         
         scheduler.step()
 
@@ -209,53 +209,55 @@ def evaluate_position_model(model, loader):
     return correct / total
     
 if __name__ == "__main__":
-    race_lap_ngrams = RaceLapNgrams(n=n)
-    race_lap_ngrams.split_by_year()
-    
-    train_X, train_laptime, train_position = race_lap_ngrams.get_train_tensors()
-    val_X, val_laptime, val_position = race_lap_ngrams.get_val_tensors()
-    test_X, test_laptime, test_position = race_lap_ngrams.get_test_tensors()
 
-    for weight_decay in [0.0, 1e-1, 1e-3, 1e-5]:
-        for momentum in [0.9, 0.99]:
-            print("\t","="*100)
-            print(f"Weight Decay: {weight_decay}, Momentum: {momentum}")
-            # Laptime
-            laptime_dim = 1
-            laptime_index = race_lap_ngrams.indices['LapTime']
-            train_X_laptime = train_X[:, :, laptime_index].view(-1, n-1, laptime_dim)
-            val_X_laptime = val_X[:, :, laptime_index].view(-1, n-1, laptime_dim)
-            test_X_laptime = test_X[:, :, laptime_index].view(-1, n-1, laptime_dim)
+    for n in [3, 7, 15, 20]:
+        race_lap_ngrams = RaceLapNgrams(n=n, hammer_time=True)
+        race_lap_ngrams.split_by_year()
+        
+        train_X, train_laptime, train_position = race_lap_ngrams.get_train_tensors()
+        val_X, val_laptime, val_position = race_lap_ngrams.get_val_tensors()
+        test_X, test_laptime, test_position = race_lap_ngrams.get_test_tensors()
 
-            train_laptime_loader = DataLoader(TensorDataset(train_X_laptime, train_laptime), batch_size=32, shuffle=True)
-            val_laptime_loader = DataLoader(TensorDataset(val_X_laptime, val_laptime), batch_size=32)
-            test_laptime_loader = DataLoader(TensorDataset(test_X_laptime, test_laptime), batch_size=32)
+        for momentum in [0.99, 0.999]:
+            for weight_decay in [1e-3, 1e-4]:
+                print("\t","="*100)
+                print(f"Weight Decay: {weight_decay}, Momentum: {momentum}")
+                # Laptime
+                laptime_dim = 1
+                laptime_index = race_lap_ngrams.indices['LapTime']
+                train_X_laptime = train_X[:, :, laptime_index].view(-1, n-1, laptime_dim)
+                val_X_laptime = val_X[:, :, laptime_index].view(-1, n-1, laptime_dim)
+                test_X_laptime = test_X[:, :, laptime_index].view(-1, n-1, laptime_dim)
 
-            # laptime_model = LapTime_MLP(input_dim=n-1)
-            laptime_model = Laptime_RNN(input_dim=laptime_dim, hidden_dim=32, num_layers=1)
-            print(laptime_model)
-            train_losses, test_losses = train_laptime_model(laptime_model, train_laptime_loader, val_laptime_loader, 
-                                                            num_epochs=400, lr=5e-4, weight_decay=weight_decay, momentum=momentum)
-            mae, mse, rmse = calculate_laptime_metrics(laptime_model, test_laptime_loader)
-            print(f"Laptime RNN Test MAE: {mae}, MSE: {mse}, RMSE: {rmse}")
+                train_laptime_loader = DataLoader(TensorDataset(train_X_laptime, train_laptime), batch_size=32, shuffle=True)
+                val_laptime_loader = DataLoader(TensorDataset(val_X_laptime, val_laptime), batch_size=32)
+                test_laptime_loader = DataLoader(TensorDataset(test_X_laptime, test_laptime), batch_size=32)
 
-            # Position
-            position_dim = 20
-            pos_start_idx = race_lap_ngrams.indices['Position_1.0']
-            pos_end_idx = race_lap_ngrams.indices['Position_20.0'] + 1
+                # laptime_model = LapTime_MLP(input_dim=n-1)
+                laptime_model = Laptime_RNN(input_dim=laptime_dim, hidden_dim=32, num_layers=1)
+                print(laptime_model)
+                train_losses, test_losses = train_laptime_model(laptime_model, train_laptime_loader, val_laptime_loader, 
+                                                                num_epochs=200, lr=1e-5, weight_decay=weight_decay, momentum=momentum)
+                mae, mse, rmse = calculate_laptime_metrics(laptime_model, test_laptime_loader)
+                print(f"Laptime RNN Test MAE: {mae}, MSE: {mse}, RMSE: {rmse}")
 
-            train_X_position = train_X[:, :, pos_start_idx:pos_end_idx].reshape(-1, n-1, position_dim)
-            val_X_position = val_X[:, :, pos_start_idx:pos_end_idx].reshape(-1, n-1, position_dim)
-            test_X_position = test_X[:, :, pos_start_idx:pos_end_idx].reshape(-1, n-1, position_dim)
+                # Position
+                position_dim = 20
+                pos_start_idx = race_lap_ngrams.indices['Position_1.0']
+                pos_end_idx = race_lap_ngrams.indices['Position_20.0'] + 1
+                train_X_position = train_X[:, :, pos_start_idx:pos_end_idx].reshape(-1, n-1, position_dim)
+                val_X_position = val_X[:, :, pos_start_idx:pos_end_idx].reshape(-1, n-1, position_dim)
+                test_X_position = test_X[:, :, pos_start_idx:pos_end_idx].reshape(-1, n-1, position_dim)
 
-            train_position_loader = DataLoader(TensorDataset(train_X_position, train_position), batch_size=32, shuffle=True)
-            val_position_loader = DataLoader(TensorDataset(val_X_position, val_position), batch_size=32)
-            test_position_loader = DataLoader(TensorDataset(test_X_position, test_position), batch_size=32)
+                train_position_loader = DataLoader(TensorDataset(train_X_position, train_position), batch_size=32, shuffle=True)
+                val_position_loader = DataLoader(TensorDataset(val_X_position, val_position), batch_size=32)
+                test_position_loader = DataLoader(TensorDataset(test_X_position, test_position), batch_size=32)
 
-            # position_model = Position_MLP(n=n-1)
-            position_model = Position_RNN(input_dim=20, hidden_dim=32, num_layers=1, out_dim=20)
-            print(position_model)
-            train_losses = train_position_model(position_model, train_position_loader, val_position_loader, 
-                                                num_epochs=400, lr=5e-4, weight_decay=weight_decay, momentum=momentum)
-            test_accuracy = evaluate_position_model(position_model, test_position_loader)
-            print(f'Position RNN Test Accuracy: {test_accuracy:.4f}')
+                # position_model = Position_MLP(n=n-1)
+                position_model = Position_RNN(input_dim=20, hidden_dim=32, num_layers=1, out_dim=20)
+                print(position_model)
+                train_losses = train_position_model(position_model, train_position_loader, val_position_loader, 
+                                                    num_epochs=200, lr=1e-5, weight_decay=weight_decay, momentum=momentum)
+                test_accuracy = evaluate_position_model(position_model, test_position_loader)
+                print(f'Position RNN Test Accuracy: {test_accuracy:.4f}')
+
